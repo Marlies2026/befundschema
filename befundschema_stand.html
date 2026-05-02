@@ -287,7 +287,7 @@ function dashLine(id,cx,cy,dir,label){
     ?el('line',{x1:cx-half,y1:cy+half,x2:cx+half,y2:cy-half,stroke:COL_DASH,'stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'4,3'})
     :el('line',{x1:cx-half,y1:cy-half,x2:cx+half,y2:cy+half,stroke:COL_DASH,'stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'4,3'});
   const h=hit(cx-half-6,cy-half-6,HWS_D+12,HWS_D+12);h.style.cursor='pointer';
-  const fn=()=>{const next=cs(id);sm[id]=next;l.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(label,next);};
+  const fn=()=>{const next=cs(id);sm[id]=next;console.log('beckenshift fn aufgerufen, next=',next,'l=',l);l.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(label,next);};
   reg2(id,fn,label);h.addEventListener('click',fn);
 }
 
@@ -358,7 +358,7 @@ function beckenshift(id,cx,cy,label){
   const l=el('line',{x1:cx,y1:cy-dy/2,x2:cx,y2:cy+dy/2,
     stroke:COL_DASH,'stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'4,3'});
   const h=hit(cx-8,cy-dy/2-4,16,dy+8);h.style.cursor='pointer';
-  const fn=()=>{const next=cs(id);sm[id]=next;l.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(label,next);};
+  const fn=()=>{const next=cs(id);sm[id]=next;console.log('beckenshift fn aufgerufen, next=',next,'l=',l);l.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(label,next);};
   reg2(id,fn,label);h.addEventListener('click',fn);
 }
 
@@ -459,10 +459,14 @@ bracket('x-bein-L',FX_L+22,bTop,bBot,'right','X-Bein links');
 bracket('x-bein-R',FX_R-22,bTop,bBot,'left','X-Bein rechts');
 bracket('o-bein-R',FX_R+22,bTop,bBot,'right','O-Bein rechts');
 
-// Beckenshift
 // Beckenshift — senkrechte Linie neben offenem Kreuzende
 beckenshift('beckenshift-L',CX-dx-16,CY_BOT,'Beckenshift nach links');
 beckenshift('beckenshift-R',CX+dx+16,CY_BOT,'Beckenshift nach rechts');
+// Sicherheitscheck
+setTimeout(()=>{
+  if(!reg['beckenshift-L']) console.error('beckenshift-L nicht registriert!');
+  if(!reg['beckenshift-R']) console.error('beckenshift-R nicht registriert!');
+},1000);
 
 // FFA
 {
@@ -495,7 +499,13 @@ const speechMap=[
   ['hws rotation nach links','HWS-Rotation-L'],
   // Schulterkreuz
   ['schulterhochstand rechts','schultern-slash'],
+  ['schulterhochdtan rechts','schultern-slash'],
+  ['schulter hochstand rechts','schultern-slash'],
+  ['schulterhof stand rechts','schultern-slash'],
   ['schulterhochstand links','schultern-backslash'],
+  ['schulterhochdtan links','schultern-backslash'],
+  ['schulter hochstand links','schultern-backslash'],
+  ['schulterhof stand links','schultern-backslash'],
   // Schulter
   ['flexionseinschränkung schulter links','F-L'],['flexionseinschränkung linke schulter','F-L'],
   ['flexion schulter links','F-L'],['flektion schulter links','F-L'],
@@ -510,15 +520,21 @@ const speechMap=[
   ['komplette innenrotationseinschränkung links','KIR-L'],['komplette innenrotation links','KIR-L'],
   ['innenrotationseinschränkung schulter links','KIR-L'],['innenrotation schulter links','KIR-L'],
   ['innenrotationseinschränkung linke schulter','KIR-L'],['innenrotation linke schulter','KIR-L'],
+  ['ker links','KIR-L'],['kir links','KIR-L'],
   ['komplette innenrotationseinschränkung rechts','KIR-R'],['komplette innenrotation rechts','KIR-R'],
   ['innenrotationseinschränkung schulter rechts','KIR-R'],['innenrotation schulter rechts','KIR-R'],
   ['innenrotationseinschränkung rechte schulter','KIR-R'],['innenrotation rechte schulter','KIR-R'],
+  ['ker rechts','KIR-R'],['kir rechts','KIR-R'],
   ['komplette außenrotationseinschränkung links','KAR-L'],['komplette außenrotation links','KAR-L'],
   ['außenrotationseinschränkung schulter links','KAR-L'],['außenrotation schulter links','KAR-L'],
   ['außenrotationseinschränkung linke schulter','KAR-L'],['außenrotation linke schulter','KAR-L'],
+  ['kar links','KAR-L'],['k a r links','KAR-L'],['ka ar links','KAR-L'],['car links','KAR-L'],
+  ['kar linke schulter','KAR-L'],['car linke schulter','KAR-L'],
   ['komplette außenrotationseinschränkung rechts','KAR-R'],['komplette außenrotation rechts','KAR-R'],
   ['außenrotationseinschränkung schulter rechts','KAR-R'],['außenrotation schulter rechts','KAR-R'],
   ['außenrotationseinschränkung rechte schulter','KAR-R'],['außenrotation rechte schulter','KAR-R'],
+  ['kar rechts','KAR-R'],['k a r rechts','KAR-R'],['ka ar rechts','KAR-R'],['car rechts','KAR-R'],
+  ['kar rechte schulter','KAR-R'],['car rechte schulter','KAR-R'],
   // Schultergürtel
   ['kompensation schultergürtelrotation nach links','plusSG-L_komp'],
   ['kompensation rotation schultergürtel nach links','plusSG-L_komp'],
@@ -549,6 +565,10 @@ const speechMap=[
   ['rotation thorax nach rechts','Thorax-R'],
   ['thorax links um','thorax-links'],
   ['vagus blockiert','thorax-links'],
+  ['vagus blockade','thorax-links'],
+  ['vagos blockiert','thorax-links'],
+  ['vagos blockade','thorax-links'],
+  ['vagos','thorax-links'],
   // Becken
   ['kompensation beckenrotation nach links','plusBe-L_komp'],
   ['kompensation becken rotation nach links','plusBe-L_komp'],
@@ -583,25 +603,47 @@ const speechMap=[
   // Tailliendreieck
   ['taillendreieck links größer','taillen-L'],
   ['taillen dreieck links größer','taillen-L'],
+  ['teilen dreieck links größer','taillen-L'],
   ['taillendreieck links','taillen-L'],
   ['taillen dreieck links','taillen-L'],
+  ['teilen dreieck links','taillen-L'],
+  ['tailliendreieck links','taillen-L'],
+  ['taillien dreieck links','taillen-L'],
   ['taillendreieck rechts größer','taillen-R'],
   ['taillen dreieck rechts größer','taillen-R'],
+  ['teilen dreieck rechts größer','taillen-R'],
   ['taillendreieck rechts','taillen-R'],
   ['taillen dreieck rechts','taillen-R'],
+  ['teilen dreieck rechts','taillen-R'],
+  ['tailliendreieck rechts','taillen-R'],
+  ['taillien dreieck rechts','taillen-R'],
   // WS Seitneigung
   ['wirbelsäulenseitneigung nach links eingeschränkt','WS-Seitneigung-L'],
   ['wirbelsäulenseitneigung nach links','WS-Seitneigung-L'],
+  ['wirbelsäulenzeitneigung nach links','WS-Seitneigung-L'],
+  ['zeitneigung wirbelsäule nach links','WS-Seitneigung-L'],
   ['seitneigung der wirbelsäule nach links eingeschränkt','WS-Seitneigung-L'],
   ['seitneigung wirbelsäule nach links eingeschränkt','WS-Seitneigung-L'],
   ['seitneigung wirbelsäule nach links','WS-Seitneigung-L'],
+  ['zeitneigung wirbelsäule nach links eingeschränkt','WS-Seitneigung-L'],
   ['seitneigung ws nach links','WS-Seitneigung-L'],
+  ['seit neigung wirbelsäule nach links','WS-Seitneigung-L'],
+  ['seit neigung wirbelsäule nach links eingeschränkt','WS-Seitneigung-L'],
+  ['seitneigungseinschränkung wirbelsäule nach links','WS-Seitneigung-L'],
+  ['seitneigungseinschränkung der wirbelsäule nach links','WS-Seitneigung-L'],
   ['wirbelsäulenseitneigung nach rechts eingeschränkt','WS-Seitneigung-R'],
   ['wirbelsäulenseitneigung nach rechts','WS-Seitneigung-R'],
+  ['wirbelsäulenzeitneigung nach rechts','WS-Seitneigung-R'],
+  ['zeitneigung wirbelsäule nach rechts','WS-Seitneigung-R'],
   ['seitneigung der wirbelsäule nach rechts eingeschränkt','WS-Seitneigung-R'],
   ['seitneigung wirbelsäule nach rechts eingeschränkt','WS-Seitneigung-R'],
   ['seitneigung wirbelsäule nach rechts','WS-Seitneigung-R'],
+  ['zeitneigung wirbelsäule nach rechts eingeschränkt','WS-Seitneigung-R'],
   ['seitneigung ws nach rechts','WS-Seitneigung-R'],
+  ['seit neigung wirbelsäule nach rechts','WS-Seitneigung-R'],
+  ['seit neigung wirbelsäule nach rechts eingeschränkt','WS-Seitneigung-R'],
+  ['seitneigungseinschränkung wirbelsäule nach rechts','WS-Seitneigung-R'],
+  ['seitneigungseinschränkung der wirbelsäule nach rechts','WS-Seitneigung-R'],
   // Beckenhochstand
   ['beckenhochstand rechts','knie-slash'],
   ['beckenhochstand links','knie-backslash'],
@@ -632,8 +674,8 @@ const speechMap=[
   ['knickfuß links','knickfuss-L'],
   ['knickfuß rechts','knickfuss-R'],
   // Bein
-  ['o-bein links','o-bein-L'],['o bein links','o-bein-L'],
-  ['o-bein rechts','o-bein-R'],['o bein rechts','o-bein-R'],
+  ['o-bein links','o-bein-L'],['o bein links','o-bein-L'],['oh bein links','o-bein-L'],['oben links','o-bein-L'],
+  ['o-bein rechts','o-bein-R'],['o bein rechts','o-bein-R'],['oh bein rechts','o-bein-R'],['oben rechts','o-bein-R'],
   ['x-bein links','x-bein-L'],['x bein links','x-bein-L'],
   ['x-bein rechts','x-bein-R'],['x bein rechts','x-bein-R'],
   // Beckenshift
@@ -697,8 +739,8 @@ function handleSpeech(transcript){
     if(t.includes(phrase)){
       // Direkt cycle aufrufen wenn in reg vorhanden
       if(reg[id]){reg[id].cycle();return;}
-      // Fallback: symbolCycle direkt aufrufen
-      if(typeof symbolCycle==='function'&&symbolCycle(id)){return;}
+      // Debug: ID nicht in reg gefunden
+      console.warn('ID nicht in reg:', id, '| Verfügbare IDs:', Object.keys(reg).join(', '));
     }
   }
 
