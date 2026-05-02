@@ -371,7 +371,9 @@ hwsRot('HWS-Rotation-R',HWS_L_CX-28,HWS_Y,'left','right','Rotation HWS rechts');
 hwsRot('HWS-Rotation-L',HWS_R_CX+28,HWS_Y,'right','left','Rotation HWS links');
 
 stxt(20,12,'L',9);stxt(280,12,'R',9);
-mkl(CX,CY_TOP,CX,CY_BOT);
+// Mittellinie in Segmente - durchgehend außer im Skoliose-Bereich
+mkl(CX,CY_TOP,CX,Y1);
+mkl(CX,Y2,CX,CY_BOT);
 
 cross2('schultern-slash','schultern-backslash',CY_TOP,'Schulterhochstand links','Schulterhochstand rechts');
 cross2('knie-slash','knie-backslash',CY_BOT,'Beckenhochstand links','Beckenhochstand rechts');
@@ -410,6 +412,22 @@ plusMark('plusSG-L',PL,Y1,'Kompensation Schultergürtel links');
 plusMark('plusSG-R',PR,Y1,'Kompensation Schultergürtel rechts');
 
 shoulderCircle('L');shoulderCircle('R');
+
+// Wendepunkt — beide Seiten gleichzeitig auf restricted setzen
+function makeWendepunkt(id, idL, idR, label){
+  sm[id]='neutral';
+  const fn=()=>{
+    const next=cs(id);sm[id]=next;
+    // Links aktivieren: state auf neutral setzen damit cycle -> restricted geht
+    if(reg[idL]){sm[idL]='neutral';reg[idL].cycle();}
+    if(reg[idR]){sm[idR]='neutral';reg[idR].cycle();}
+    showSb(label,next);
+  };
+  reg2(id,fn,label);
+}
+makeWendepunkt('wendepunkt-SG','Schultergürtel-L','Schultergürtel-R','Wendepunkt Schultergürtel');
+makeWendepunkt('wendepunkt-Th','Thorax-L','Thorax-R','Wendepunkt Thorax');
+makeWendepunkt('wendepunkt-Be','Becken-L','Becken-R','Wendepunkt Becken');
 
 // Thorax
 hlineDir('Thorax-L','Thorax-R',Y2,
@@ -537,11 +555,15 @@ const speechMap=[
   // Schulter
   ['flexionseinschränkung schulter links','F-L'],['flexionseinschränkung linke schulter','F-L'],
   ['flexionseinschränkung schulterlinks','F-L'],
+  ['schulterflexionseinschränkung links','F-L'],
+  ['schulterflexion links','F-L'],
   ['lektionseinschränkung linke schulter','F-L'],['lektionseinschränkung schulter links','F-L'],
   ['flexion schulter links','F-L'],['flektion schulter links','F-L'],
   ['schulter flexion links','F-L'],['schulter flektion links','F-L'],
   ['flexionseinschränkung schulter rechts','F-R'],['flexionseinschränkung rechte schulter','F-R'],
   ['flexionseinschränkung schulterrechts','F-R'],
+  ['schulterflexionseinschränkung rechts','F-R'],
+  ['schulterflexion rechts','F-R'],
   ['lektionseinschränkung rechte schulter','F-R'],['lektionseinschränkung schulter rechts','F-R'],
   ['flexion schulter rechts','F-R'],['flektion schulter rechts','F-R'],
   ['schulter flexion rechts','F-R'],['schulter flektion rechts','F-R'],
@@ -617,6 +639,9 @@ const speechMap=[
   ['vagos blockiert','thorax-links'],
   ['vagos blockade','thorax-links'],
   ['vagos','thorax-links'],
+  ['markus blockiert','thorax-links'],
+  ['markus blockade','thorax-links'],
+  ['markus','thorax-links'],
   // Becken
   ['kompensation beckenrotation nach links','plusBe-L_komp'],
   ['kompensation beckenrotation links','plusBe-L_komp'],
@@ -633,12 +658,17 @@ const speechMap=[
   ['kompensation rotation becken rechts','plusBe-R_komp'],
   ['kompensation becken rechts','plusBe-R_komp'],
   ['beckenrotation nach links','Becken-L'],
+  ['beckenrotation links','Becken-L'],
   ['becken rotation nach links','Becken-L'],
+  ['becken rotation links','Becken-L'],
   ['rotation becken nach links','Becken-L'],
   ['beckenrotation nach rechts','Becken-R'],
+  ['beckenrotation rechts','Becken-R'],
   ['becken rotation nach rechts','Becken-R'],
+  ['becken rotation rechts','Becken-R'],
   ['rotation becken nach rechts','Becken-R'],
   ['becken rechts um','becken-rechts'],
+  ['becken rechts','becken-rechts'],
   // Kraftlinien
   ['vordere kraftlinie rechts','VKL-R'],
   ['vordere kraftlinie links','VKL-L'],
@@ -716,12 +746,16 @@ const speechMap=[
   ['hyperextension linke knie','knie-L'],
   ['hyperextension knie links','knie-L'],
   ['extension knie links','knie-L'],
+  ['extension linkes knie','knie-L'],
+  ['extension linke knie','knie-L'],
   ['knieextension links','knie-L'],
   ['knie extension links','knie-L'],
   ['hyperextension rechtes knie','knie-R'],
   ['hyperextension rechte knie','knie-R'],
   ['hyperextension knie rechts','knie-R'],
   ['extension knie rechts','knie-R'],
+  ['extension rechtes knie','knie-R'],
+  ['extension rechte knie','knie-R'],
   ['knieextension rechts','knie-R'],
   ['knie extension rechts','knie-R'],
   ['flexion linkes knie','flexion-knie-L'],
@@ -740,6 +774,16 @@ const speechMap=[
   ['o-bein rechts','o-bein-R'],['o bein rechts','o-bein-R'],['oh bein rechts','o-bein-R'],['oben rechts','o-bein-R'],
   ['x-bein links','x-bein-L'],['x bein links','x-bein-L'],
   ['x-bein rechts','x-bein-R'],['x bein rechts','x-bein-R'],
+  // Wendepunkt
+  ['wendepunkt schultergürtel','wendepunkt-SG'],
+  ['schultergürtel am wendepunkt','wendepunkt-SG'],
+  ['schultergürtel wendepunkt','wendepunkt-SG'],
+  ['wendepunkt thorax','wendepunkt-Th'],
+  ['thorax am wendepunkt','wendepunkt-Th'],
+  ['thorax wendepunkt','wendepunkt-Th'],
+  ['wendepunkt becken','wendepunkt-Be'],
+  ['becken am wendepunkt','wendepunkt-Be'],
+  ['becken wendepunkt','wendepunkt-Be'],
   // Beckenshift
   ['beckenshift nach links','beckenshift-L'],
   ['becken shift nach links','beckenshift-L'],
