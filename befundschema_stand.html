@@ -413,14 +413,16 @@ plusMark('plusSG-R',PR,Y1,'Kompensation Schultergürtel rechts');
 
 shoulderCircle('L');shoulderCircle('R');
 
-// Wendepunkt — beide Seiten gleichzeitig auf restricted setzen
+// Wendepunkt — beide Seiten direkt einfärben
+// Wir speichern colorFn für jede Querlinie
+const lineFns={};
 function makeWendepunkt(id, idL, idR, label){
   sm[id]='neutral';
   const fn=()=>{
     const next=cs(id);sm[id]=next;
-    // Links aktivieren: state auf neutral setzen damit cycle -> restricted geht
-    if(reg[idL]){sm[idL]='neutral';reg[idL].cycle();}
-    if(reg[idR]){sm[idR]='neutral';reg[idR].cycle();}
+    sm[idL]=next;sm[idR]=next;
+    if(lineFns[idL]) lineFns[idL](next);
+    if(lineFns[idR]) lineFns[idR](next);
     showSb(label,next);
   };
   reg2(id,fn,label);
