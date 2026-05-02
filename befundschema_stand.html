@@ -220,6 +220,13 @@ function hlineDir(idL,idR,y,labelL,labelR,plusIdL,plusIdR,plusLabelL,plusLabelR)
   if(plusIdR) reg2(plusIdR+'_komp',()=>cycR(true),plusLabelR||labelR);
   hL.addEventListener('click',()=>cycL(false));
   hR.addEventListener('click',()=>cycR(false));
+  // Wendepunkt: beide Dreiecke + Linie einfärben
+  lineFns[idL]=(next)=>{
+    sm[idL]=next;sm[idR]=next;
+    linie.setAttribute('stroke',SCOL[next]);
+    triL.setAttribute('stroke',SCOL[next]);
+    triR.setAttribute('stroke',SCOL[next]);
+  };
 }
 
 function plusMark(id,x,y,label){
