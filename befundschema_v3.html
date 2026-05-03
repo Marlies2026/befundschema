@@ -110,7 +110,7 @@ const reg={};
 const lineFns={};
 
 function el(tag,attrs){const e=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));svg.appendChild(e);return e;}
-function cs(id){return STATES[(STATES.indexOf(sm[id])+1)%STATES.length];}
+function cs(id){return sm[id]==='neutral'?'restricted':'neutral';}
 function csPhysio(id){
   // Physiologische Symbole: neutral->free->neutral (grün, nicht rot)
   return sm[id]==='neutral'?'free':'neutral';
