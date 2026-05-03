@@ -59,6 +59,7 @@ button { padding: 8px 16px; border-radius: 6px; border: 1px solid #ccc; font-siz
 <p class="hint">1× = eingeschränkt/frei · 2× = zurücksetzen</p>
 <div class="controls">
   <button id="micStartBtn" onclick="startRecognition()">🎤 Mikrofon starten</button>
+  <button id="audioBtn" onclick="aktiviereAudio()" style="background:#fff0e0;color:#996600;border-color:#cc8800;">🔔 Ton aktivieren</button>
   <button id="exportBtn" onclick="exportBefund()">📸 Exportieren</button>
   <button id="resetBtn" onclick="resetAll()">↺ Zurücksetzen</button>
 </div>
@@ -135,6 +136,25 @@ function playTon(freq,dauer,typ='sine'){
     osc.start();osc.stop(audioCtx.currentTime+dauer);
   }catch(e){}
 }
+function aktiviereAudio(){
+  try{
+    if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    audioCtx.resume().then(()=>{
+      // Testton
+      const osc=audioCtx.createOscillator();
+      const gain=audioCtx.createGain();
+      osc.connect(gain);gain.connect(audioCtx.destination);
+      osc.frequency.value=880;
+      gain.gain.setValueAtTime(0.3,audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.3);
+      osc.start();osc.stop(audioCtx.currentTime+0.3);
+      document.getElementById('audioBtn').textContent='🔔 Ton aktiv';
+      document.getElementById('audioBtn').style.background='#f0fff0';
+      document.getElementById('audioBtn').style.color='#336600';
+    });
+  }catch(e){console.log('Audio Fehler:',e);}
+}
+
 function tonErfolgreich(){
   // Zwei kurze helle Töne
   playTon(880,0.1,'sine');
