@@ -969,11 +969,28 @@ const speechMap=[
 ];
 
 const tabMap=[
-  ['ich beginne im stand','Stand'],['stand','Stand'],
-  ['ich beginne im sitz','Sitz'],['sitz','Sitz'],
-  ['rückenlage','Rück'],['rücken','Rück'],['ich beginne in rückenlage','Rück'],
-  ['rippe','Rippe'],['zusatz','Zusatz'],['schädel','Schädel'],
+  ['ich beginne im stand','Stand'],
+  ['untersuchung im stand','Stand'],
+  ['ich beginne im sitz','Sitz'],
+  ['untersuchung im sitz','Sitz'],
+  ['rückenlage','Rück'],
+  ['untersuchung in rückenlage','Rück'],
+  ['ich beginne in rückenlage','Rück'],
+  ['untersuchung rippe','Rippe'],
+  ['rippenuntersuchung','Rippe'],
+  ['zusatz','Zusatz'],
+  ['schädel','Schädel'],
 ];
+
+// Tab-Wechsel Direktbefehle (nur exakt)
+const tabDirekt={
+  'stand':'Stand',
+  'sitz':'Sitz',
+  'rückenlage':'Rück',
+  'rücken':'Rück',
+  'rippe':'Rippe',
+  'rippen':'Rippe',
+};
 
 // Globale cycle-Funktion als Fallback für alle Symbole
 function symbolCycle(id){
@@ -987,14 +1004,21 @@ function handleSpeech(transcript){
   const t=transcript.toLowerCase().trim();
   document.getElementById('speechLog').textContent='Gehört: „'+transcript+'"';
 
-  // Tab-Wechsel — nur exakter Match oder klare Anfangsphrase
+  // Tab-Wechsel — Direktbefehle (exakter Match)
+  if(tabDirekt[t]){
+    const tab=tabDirekt[t];
+    document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active',btn.textContent===tab));
+    document.getElementById('sb').textContent='Wechsel zu: '+tab;
+    tonErfolgreich();
+    return;
+  }
+  // Tab-Wechsel — längere Phrasen
   for(const [phrase,tab] of tabMap){
-    if(t===phrase||t.startsWith('ich beginne im ')||t.startsWith('ich beginne in ')){
-      if(t.includes(phrase)){
-        document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active',btn.textContent===tab));
-        document.getElementById('sb').textContent='Tab: '+tab;
-        return;
-      }
+    if(t.includes(phrase)){
+      document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active',btn.textContent===tab));
+      document.getElementById('sb').textContent='Wechsel zu: '+tab;
+      tonErfolgreich();
+      return;
     }
   }
 
@@ -1051,7 +1075,15 @@ function startRecognition(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   const recognition=new SR();
   recognition.lang='de-DE';recognition.continuous=true;recognition.interimResults=false;
-  recognition.onstart=()=>setMicUI('active','Mikrofon aktiv — hört zu…');
+  recognition.onstart=()=>{
+    setMicUI('active','Mikrofon aktiv — hört zu…');
+    // Audio automatisch beim Mikrofon-Start aktivieren
+    if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+    if(audioCtx&&audioCtx.state==='suspended'){audioCtx.resume();}
+    document.getElementById('audioBtn').textContent='🔔 Ton aktiv';
+    document.getElementById('audioBtn').style.background='#f0fff0';
+    document.getElementById('audioBtn').style.color='#336600';
+  };
   recognition.onresult=(e)=>handleSpeech(e.results[e.results.length-1][0].transcript);
   recognition.onerror=(e)=>{
     micRunning=false;
