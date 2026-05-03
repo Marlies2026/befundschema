@@ -401,8 +401,34 @@ dashLine('WS-Seitneigung-L',WS_R_CX,WS_Y,'\\','Seitneigung WS links');
 lateralKraftlinie('L');
 lateralKraftlinie('R');
 
-ctxt('thorax-links',CX-LABEL_OFFSET,SKOL_Y,'(←)',16,'Vagus blockiert / Thorax links um');
-ctxt('becken-rechts',CX+LABEL_OFFSET,(Y2+Y3)/2,'(→)',16,'Vagus blockiert / Becken rechts um');
+// (←) und (→) als echte SVG-Pfeile in Klammern
+{
+  const id='thorax-links', cx=CX-LABEL_OFFSET, cy=SKOL_Y, label='Vagus blockiert / Thorax links um';
+  sm[id]='neutral';
+  const TS=5, PL2=8;
+  // Klammern
+  const tL=el('text',{x:cx-PL2-2,y:cy,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:'#222','pointer-events':'none'});tL.textContent='(';svg.appendChild(tL);
+  const tR=el('text',{x:cx+PL2+2,y:cy,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:'#222','pointer-events':'none'});tR.textContent=')';svg.appendChild(tR);
+  // Pfeil nach links
+  const shaft=el('line',{x1:cx+PL2-2,y1:cy,x2:cx-PL2+TS,y2:cy,stroke:'#222','stroke-width':1.5,'stroke-linecap':'round'});
+  const tip=el('polygon',{points:`${cx-PL2},${cy} ${cx-PL2+TS},${cy-TS/2} ${cx-PL2+TS},${cy+TS/2}`,fill:'#222'});
+  const h=el('rect',{x:cx-PL2-6,y:cy-8,width:PL2*2+12,height:16,fill:'transparent'});h.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;const col=next==='neutral'?'#222':({restricted:'#cc0000',improved:'#cc8800',free:'#336600'}[next]);[tL,tR].forEach(t=>t.setAttribute('fill',col));shaft.setAttribute('stroke',col);tip.setAttribute('fill',col);showSb(label,next);};
+  reg2(id,fn,label);h.addEventListener('click',fn);
+}
+{
+  const id='becken-rechts', cx=CX+LABEL_OFFSET, cy=(Y2+Y3)/2, label='Vagus blockiert / Becken rechts um';
+  sm[id]='neutral';
+  const TS=5, PL2=8;
+  const tL=el('text',{x:cx-PL2-2,y:cy,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:'#222','pointer-events':'none'});tL.textContent='(';svg.appendChild(tL);
+  const tR=el('text',{x:cx+PL2+2,y:cy,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:'#222','pointer-events':'none'});tR.textContent=')';svg.appendChild(tR);
+  // Pfeil nach rechts
+  const shaft=el('line',{x1:cx-PL2+2,y1:cy,x2:cx+PL2-TS,y2:cy,stroke:'#222','stroke-width':1.5,'stroke-linecap':'round'});
+  const tip=el('polygon',{points:`${cx+PL2},${cy} ${cx+PL2-TS},${cy-TS/2} ${cx+PL2-TS},${cy+TS/2}`,fill:'#222'});
+  const h=el('rect',{x:cx-PL2-6,y:cy-8,width:PL2*2+12,height:16,fill:'transparent'});h.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;const col=next==='neutral'?'#222':({restricted:'#cc0000',improved:'#cc8800',free:'#336600'}[next]);[tL,tR].forEach(t=>t.setAttribute('fill',col));shaft.setAttribute('stroke',col);tip.setAttribute('fill',col);showSb(label,next);};
+  reg2(id,fn,label);h.addEventListener('click',fn);
+}
 
 // Schultergürtel
 hlineDir('Schultergürtel-L','Schultergürtel-R',Y1,
