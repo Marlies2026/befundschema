@@ -364,7 +364,7 @@ function kraftlinie(id,side,dir,label){
 function beckenshift(id,cx,cy,label){
   sm[id]='neutral';
   const l=el('line',{x1:cx,y1:cy-HWS_D/2,x2:cx,y2:cy+HWS_D/2,
-    stroke:COL_DASH,'stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'4,3'});
+    stroke:COL_DASH,'stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'3,2'});
   const h=hit(cx-8,cy-HWS_D/2-4,16,HWS_D+8);h.style.cursor='pointer';
   const fn=()=>{const next=cs(id);sm[id]=next;console.log('beckenshift fn aufgerufen, next=',next,'l=',l);l.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(label,next);};
   reg2(id,fn,label);h.addEventListener('click',fn);
