@@ -135,8 +135,15 @@ function playTon(freq,dauer,typ='sine'){
     osc.start();osc.stop(audioCtx.currentTime+dauer);
   }catch(e){}
 }
-function tonErfolgreich(){playTon(880,0.15,'sine');}
-function tonNichtErkannt(){playTon(220,0.2,'triangle');}
+function tonErfolgreich(){
+  // Zwei kurze helle Töne
+  playTon(880,0.1,'sine');
+  setTimeout(()=>playTon(1100,0.1,'sine'),120);
+}
+function tonNichtErkannt(){
+  // Ein tiefer langer Ton
+  playTon(180,0.5,'triangle');
+}
 
 function showSb(label,state){
   const sb=document.getElementById('sb');
@@ -1030,7 +1037,7 @@ function startRecognition(){
     setMicUI('stopped','Kurze Pause… ('+e.error+')');
     setTimeout(startRecognition,5000);
   };
-  recognition.onend=()=>{micRunning=false;setTimeout(startRecognition,3000);setMicUI('stopped','Mikrofon kurz unterbrochen…');try{playTon(440,0.3,'sine');}catch(e){}};
+  recognition.onend=()=>{micRunning=false;setTimeout(startRecognition,3000);setMicUI('stopped','Mikrofon kurz unterbrochen…');try{playTon(600,0.15,'sine');setTimeout(()=>playTon(350,0.2,'sine'),150);}catch(e){}};
   try{recognition.start();}catch(e){micRunning=false;setMicUI('stopped','Fehler — bitte Button drücken');}
 }
 window.addEventListener('load',()=>setTimeout(startRecognition,1500));
