@@ -136,14 +136,13 @@ function playTon(freq,dauer,typ='sine'){
   }catch(e){}
 }
 function tonErfolgreich(){
-  // Aufsteigend: tief->hoch, klar und positiv
-  playTon(523,0.12,'sine');
-  setTimeout(()=>playTon(784,0.12,'sine'),130);
-  setTimeout(()=>playTon(1047,0.15,'sine'),260);
+  // Zwei kurze helle Töne
+  playTon(880,0.1,'sine');
+  setTimeout(()=>playTon(1100,0.1,'sine'),120);
 }
 function tonNichtErkannt(){
-  // Tiefer einzelner langer Brummton
-  playTon(150,0.6,'sawtooth');
+  // Ein tiefer langer Ton
+  playTon(180,0.5,'triangle');
 }
 
 function showSb(label,state){
@@ -1022,6 +1021,9 @@ function setMicUI(state,text){
 
 function startRecognition(){
   if(micRunning)return;
+  // AudioContext beim Mikrofon-Start aktivieren
+  if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  if(audioCtx&&audioCtx.state==='suspended'){audioCtx.resume();}
   if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window)){
     setMicUI('stopped','Spracherkennung nicht verfügbar');return;
   }
@@ -1038,7 +1040,7 @@ function startRecognition(){
     setMicUI('stopped','Kurze Pause… ('+e.error+')');
     setTimeout(startRecognition,5000);
   };
-  recognition.onend=()=>{micRunning=false;setTimeout(startRecognition,3000);setMicUI('stopped','Mikrofon kurz unterbrochen…');try{playTon(600,0.15,'sine');setTimeout(()=>playTon(350,0.2,'sine'),150);}catch(e){}};
+  recognition.onend=()=>{micRunning=false;setTimeout(startRecognition,3000);setMicUI('stopped','Mikrofon kurz unterbrochen…')};
   try{recognition.start();}catch(e){micRunning=false;setMicUI('stopped','Fehler — bitte Button drücken');}
 }
 window.addEventListener('load',()=>setTimeout(startRecognition,1500));
