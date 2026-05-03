@@ -603,6 +603,9 @@ const speechMap=[
   ['seit neigungseinschränkung hws links','HWS-Seitneigung-L'],
   ['herzzone','HWS-Seitneigung-R'],
   ['lungenzone','HWS-Seitneigung-L'],
+  ['rotation halswirbelsäule nach rechts eingeschränkt','HWS-Rotation-R'],
+  ['rotation halswirbelsäule nach rechts','HWS-Rotation-R'],
+  ['halswirbelsäule rotation nach rechts','HWS-Rotation-R'],
   ['hws rotation nach rechts','HWS-Rotation-R'],
   ['hws rotation nach rechts eingeschränkt','HWS-Rotation-R'],
   ['rotation hws nach rechts','HWS-Rotation-R'],
@@ -612,6 +615,9 @@ const speechMap=[
   ['habe was nach rechts eingeschränkt','HWS-Rotation-R'],
   ['habe es rotation nach rechts eingeschränkt','HWS-Rotation-R'],
   ['es rotation nach rechts eingeschränkt','HWS-Rotation-R'],
+  ['rotation halswirbelsäule nach links eingeschränkt','HWS-Rotation-L'],
+  ['rotation halswirbelsäule nach links','HWS-Rotation-L'],
+  ['halswirbelsäule rotation nach links','HWS-Rotation-L'],
   ['hws rotation nach links','HWS-Rotation-L'],
   ['hws rotation nach links eingeschränkt','HWS-Rotation-L'],
   ['rotation hws nach links','HWS-Rotation-L'],
@@ -638,6 +644,7 @@ const speechMap=[
   ['schulterflektion links','F-L'],
   ['schulterflektionseinschränkung links','F-L'],
   ['lektionseinschränkung linke schulter','F-L'],['lektionseinschränkung schulter links','F-L'],
+  ['flexion linke schulter','F-L'],
   ['eingeschränkte flexion linke schulter','F-L'],
   ['eingeschränkte flexion schulter links','F-L'],
   ['flexion schulter links','F-L'],['flektion schulter links','F-L'],
@@ -649,6 +656,7 @@ const speechMap=[
   ['schulterflektion rechts','F-R'],
   ['schulterflektionseinschränkung rechts','F-R'],
   ['lektionseinschränkung rechte schulter','F-R'],['lektionseinschränkung schulter rechts','F-R'],
+  ['flexion rechte schulter','F-R'],
   ['eingeschränkte flexion rechte schulter','F-R'],
   ['eingeschränkte flexion schulter rechts','F-R'],
   ['flexion schulter rechts','F-R'],['flektion schulter rechts','F-R'],
@@ -980,6 +988,7 @@ function handleSpeech(transcript){
     if(ffaLabel) ffaLabel.setAttribute('fill','#cc0000');
     if(ffaWertEl){ffaWertEl.textContent=wert+' cm';ffaWertEl.setAttribute('fill','#cc0000');}
     showSb('FFA: '+wert+' cm','restricted');
+    tonErfolgreich();
     return;
   }
 
@@ -1028,7 +1037,7 @@ function startRecognition(){
     setMicUI('stopped','Kurze Pause… ('+e.error+')');
     setTimeout(startRecognition,5000);
   };
-  recognition.onend=()=>{micRunning=false;setTimeout(startRecognition,3000);setMicUI('stopped','Mikrofon kurz unterbrochen…');};
+  recognition.onend=()=>{micRunning=false;setTimeout(startRecognition,3000);setMicUI('stopped','Mikrofon kurz unterbrochen…');try{playTon(440,0.3,'sine');}catch(e){}};
   try{recognition.start();}catch(e){micRunning=false;setMicUI('stopped','Fehler — bitte Button drücken');}
 }
 window.addEventListener('load',()=>setTimeout(startRecognition,1500));
