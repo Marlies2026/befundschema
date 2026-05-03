@@ -363,9 +363,9 @@ function kraftlinie(id,side,dir,label){
 // Beckenshift — senkrechte gestrichelte Linie, Länge = dy (Öffnung des Kreuzes)
 function beckenshift(id,cx,cy,label){
   sm[id]='neutral';
-  const l=el('line',{x1:cx,y1:cy-dy/2,x2:cx,y2:cy+dy/2,
+  const l=el('line',{x1:cx,y1:cy-HWS_D/2,x2:cx,y2:cy+HWS_D/2,
     stroke:COL_DASH,'stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'4,3'});
-  const h=hit(cx-8,cy-dy/2-4,16,dy+8);h.style.cursor='pointer';
+  const h=hit(cx-8,cy-HWS_D/2-4,16,HWS_D+8);h.style.cursor='pointer';
   const fn=()=>{const next=cs(id);sm[id]=next;console.log('beckenshift fn aufgerufen, next=',next,'l=',l);l.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(label,next);};
   reg2(id,fn,label);h.addEventListener('click',fn);
 }
@@ -671,6 +671,9 @@ const speechMap=[
   ['vagos','thorax-links'],
   ['markus blockiert','thorax-links'],
   ['markus blockade','thorax-links'],
+  ['markus blockierung thorax','thorax-links'],
+  ['markus blockierung','thorax-links'],
+  ['thorax links um','thorax-links'],
   ['markus','thorax-links'],
   // Becken
   ['kompensation beckenrotation nach links','plusBe-L_komp'],
@@ -699,6 +702,7 @@ const speechMap=[
   ['rotation becken nach rechts','Becken-R'],
   ['becken rechts um','becken-rechts'],
   ['becken rechts','becken-rechts'],
+  ['markus blockierung becken','becken-rechts'],
   // Kraftlinien
   ['vordere kraftlinie rechts','VKL-R'],
   ['vordere kraftlinie links','VKL-L'],
@@ -724,9 +728,11 @@ const speechMap=[
   ['skoliose thorakale rechts','Skoliose-thorakal-R'],
   ['skoliose im thorakalen bereich rechts','Skoliose-thorakal-R'],
   ['lumbale skoliose links','Skoliose-lumbal-L'],
+  ['lumbales skoliose links','Skoliose-lumbal-L'],
   ['lumbale skoliose linke','Skoliose-lumbal-L'],
   ['skoliose lumbal links','Skoliose-lumbal-L'],
   ['lumbale skoliose rechts','Skoliose-lumbal-R'],
+  ['lumbales skoliose rechts','Skoliose-lumbal-R'],
   ['lumbale skoliose rechte','Skoliose-lumbal-R'],
   ['skoliose lumbal rechts','Skoliose-lumbal-R'],
 
@@ -810,7 +816,11 @@ const speechMap=[
   ['flexion knie rechts','flexion-knie-R'],
   // Fuß
   ['knickfuß links','knickfuss-L'],
+  ['knick fuß links','knickfuss-L'],
+  ['knickfuss links','knickfuss-L'],
   ['knickfuß rechts','knickfuss-R'],
+  ['knick fuß rechts','knickfuss-R'],
+  ['knickfuss rechts','knickfuss-R'],
   // Bein
   ['o-bein links','o-bein-L'],['o bein links','o-bein-L'],['oh bein links','o-bein-L'],['oben links','o-bein-L'],
   ['o-bein rechts','o-bein-R'],['o bein rechts','o-bein-R'],['oh bein rechts','o-bein-R'],['oben rechts','o-bein-R'],
