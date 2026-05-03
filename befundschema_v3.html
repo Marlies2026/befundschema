@@ -121,18 +121,29 @@ function csComp(id){
 }
 function reg2(id,fn,label){sm[id]='neutral';reg[id]={cycle:fn,label};}
 // ─── AUDIO FEEDBACK ──────────────────────────────────────────────────────────
-const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-function playTon(freq,dauer,typ='sine'){
-  const osc=audioCtx.createOscillator();
-  const gain=audioCtx.createGain();
-  osc.connect(gain);gain.connect(audioCtx.destination);
-  osc.type=typ;osc.frequency.setValueAtTime(freq,audioCtx.currentTime);
-  gain.gain.setValueAtTime(0.3,audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dauer);
-  osc.start();osc.stop(audioCtx.currentTime+dauer);
+let audioCtx=null;
+function getAudio(){
+  if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  return audioCtx;
 }
-function tonErfolgreich(){playTon(880,0.15,'sine');}  // heller Ding
-function tonNichtErkannt(){playTon(220,0.2,'triangle');} // tiefer Boop
+function playTon(freq,dauer,typ='sine'){
+  try{
+    const ctx=getAudio();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+    osc.connect(gain);gain.connect(ctx.destination);
+    osc.type=typ;osc.frequency.setValueAtTime(freq,ctx.currentTime);
+    gain.gain.setValueAtTime(0.3,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+dauer);
+    osc.start();osc.stop(ctx.currentTime+dauer);
+  }catch(e){console.log('Audio Fehler:',e);}
+}
+function tonErfolgreich(){playTon(880,0.15,'sine');}
+function tonNichtErkannt(){playTon(220,0.2,'triangle');}
+// AudioContext beim ersten Tippen aktivieren
+document.addEventListener('touchstart',()=>{getAudio();},{once:true});
+document.addEventListener('click',()=>{getAudio();},{once:true});
 
 function showSb(label,state){
   const sb=document.getElementById('sb');
