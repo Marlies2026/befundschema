@@ -226,8 +226,8 @@ function hlineDir(idL,idR,y,labelL,labelR,plusIdL,plusIdR,plusLabelL,plusLabelR,
   reg2(idL,()=>cycL(false,true),labelL);reg2(idR,()=>cycR(false,true),labelR);
   if(plusIdL) reg2(plusIdL+'_komp',()=>cycL(true,false),plusLabelL||labelL);
   if(plusIdR) reg2(plusIdR+'_komp',()=>cycR(true,false),plusLabelR||labelR);
-  hL.addEventListener('click',()=>cycL(false,false));
-  hR.addEventListener('click',()=>cycR(false,false));
+  hL.addEventListener('click',()=>cycL(false,true));
+  hR.addEventListener('click',()=>cycR(false,true));
   // Wendepunkt: beide Dreiecke + Linie einfärben
   lineFns[idL]=(next)=>{
     sm[idL]=next;sm[idR]=next;
