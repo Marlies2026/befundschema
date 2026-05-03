@@ -120,6 +120,20 @@ function csComp(id){
   return sm[id]==='neutral'?'restricted':'neutral';
 }
 function reg2(id,fn,label){sm[id]='neutral';reg[id]={cycle:fn,label};}
+// ─── AUDIO FEEDBACK ──────────────────────────────────────────────────────────
+const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+function playTon(freq,dauer,typ='sine'){
+  const osc=audioCtx.createOscillator();
+  const gain=audioCtx.createGain();
+  osc.connect(gain);gain.connect(audioCtx.destination);
+  osc.type=typ;osc.frequency.setValueAtTime(freq,audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.3,audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dauer);
+  osc.start();osc.stop(audioCtx.currentTime+dauer);
+}
+function tonErfolgreich(){playTon(880,0.15,'sine');}  // heller Ding
+function tonNichtErkannt(){playTon(220,0.2,'triangle');} // tiefer Boop
+
 function showSb(label,state){
   const sb=document.getElementById('sb');
   if(state==='neutral')sb.innerHTML=label+' — zurückgesetzt';
@@ -965,13 +979,14 @@ function handleSpeech(transcript){
 
     if(t.includes(phrase)){
       // Direkt cycle aufrufen wenn in reg vorhanden
-      if(reg[id]){reg[id].cycle();return;}
+      if(reg[id]){reg[id].cycle();tonErfolgreich();return;}
       // Debug: ID nicht in reg gefunden
       console.warn('ID nicht in reg:', id, '| Verfügbare IDs:', Object.keys(reg).join(', '));
     }
   }
 
   document.getElementById('speechLog').textContent='Nicht erkannt: „'+transcript+'" — bitte Symbol antippen';
+  tonNichtErkannt();
 }
 
 // ─── SPRACHERKENNUNG ──────────────────────────────────────────────────────────
