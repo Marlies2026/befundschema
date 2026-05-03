@@ -385,13 +385,7 @@ mkl(CX,CY_TOP,CX,CY_BOT);
 cross2('schultern-slash','schultern-backslash',CY_TOP,'Schulterhochstand links','Schulterhochstand rechts');
 cross2('knie-slash','knie-backslash',CY_BOT,'Beckenhochstand links','Beckenhochstand rechts');
 
-// Skoliose gestrichelt
-{
-  const dl=el('line',{x1:CX,y1:Y1+10,x2:CX,y2:Y2-10,stroke:COL_DASH,'stroke-width':SW,'stroke-dasharray':'5,4'});
-  const h=hit(CX-8,Y1+10,16,Y2-Y1-20);h.style.cursor='pointer';sm['skoliose']='neutral';
-  const fn=()=>{const next=cs('skoliose');sm['skoliose']=next;dl.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb('Skoliose',next);};
-  reg2('skoliose',fn,'Skoliose');h.addEventListener('click',fn);
-}
+// Keine Skoliose-Mittellinie mehr
 
 tri('taillen-L',TRI_L_X,SKOL_Y,'left','Tailliendreieck links größer');
 tri('taillen-R',TRI_R_X,SKOL_Y,'right','Tailliendreieck rechts größer');
@@ -686,14 +680,26 @@ const speechMap=[
   ['thorakale skoliose links','Skoliose-thorakal-L'],
   ['thorakales skoliose links','Skoliose-thorakal-L'],
   ['skoliose thorakal links','Skoliose-thorakal-L'],
+  ['skoliose thoraka links','Skoliose-thorakal-L'],
+  ['skoliose turakal links','Skoliose-thorakal-L'],
+  ['skoliose turakal linke','Skoliose-thorakal-L'],
+  ['skoliose thorakale links','Skoliose-thorakal-L'],
+  ['skoliose im thorakalen bereich links','Skoliose-thorakal-L'],
   ['thorakale skoliose rechts','Skoliose-thorakal-R'],
   ['thorakales skoliose rechts','Skoliose-thorakal-R'],
   ['skoliose thorakal rechts','Skoliose-thorakal-R'],
+  ['skoliose thoraka rechts','Skoliose-thorakal-R'],
+  ['skoliose turakal rechts','Skoliose-thorakal-R'],
+  ['skoliose turakal rechte','Skoliose-thorakal-R'],
+  ['skoliose thorakale rechts','Skoliose-thorakal-R'],
+  ['skoliose im thorakalen bereich rechts','Skoliose-thorakal-R'],
   ['lumbale skoliose links','Skoliose-lumbal-L'],
+  ['lumbale skoliose linke','Skoliose-lumbal-L'],
   ['skoliose lumbal links','Skoliose-lumbal-L'],
   ['lumbale skoliose rechts','Skoliose-lumbal-R'],
+  ['lumbale skoliose rechte','Skoliose-lumbal-R'],
   ['skoliose lumbal rechts','Skoliose-lumbal-R'],
-  ['skoliose','skoliose'],
+
   // Tailliendreieck
   ['taillendreieck links größer','taillen-L'],
   ['taillen dreieck links größer','taillen-L'],
@@ -852,6 +858,7 @@ function handleSpeech(transcript){
   const sortedMap=[...speechMap].sort((a,b)=>b[0].length-a[0].length);
   for(const [phrase,id] of sortedMap){
     if(t.includes(phrase)) console.log('Match:', phrase, '->', id, '| reg:', !!reg[id]);
+
     if(t.includes(phrase)){
       // Direkt cycle aufrufen wenn in reg vorhanden
       if(reg[id]){reg[id].cycle();return;}
