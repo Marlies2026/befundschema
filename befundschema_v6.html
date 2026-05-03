@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Befundschema – Stand</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f0f0; color: #111; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 6px; }
+h1 { font-size: 13px; letter-spacing: 3px; text-transform: uppercase; color: #666; margin-bottom: 5px; }
+.tabs { display: flex; gap: 4px; margin-bottom: 5px; flex-wrap: wrap; justify-content: center; }
+.tab { font-size: 10px; padding: 4px 10px; border: 1px solid #bbb; border-radius: 4px; background: #fff; color: #666; cursor: pointer; letter-spacing: 1px; }
+.tab.active { background: #222; color: #fff; border-color: #222; }
+.legend { display: flex; gap: 10px; align-items: center; font-size: 10px; color: #666; margin-bottom: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 3px; }
+#schema-container { background: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 8px; margin-bottom: 5px; }
+.status-bar { width: 100%; max-width: 420px; background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 5px 10px; font-size: 11px; color: #666; min-height: 26px; margin-bottom: 4px; display: flex; align-items: center; }
+.name { color: #111; font-weight: 600; }
+.state-restricted { color: #cc0000; font-weight: 600; }
+.state-improved { color: #cc8800; font-weight: 600; }
+.state-free { color: #336600; font-weight: 600; }
+.mic-status { width: 100%; max-width: 420px; background: #fff; border: 2px solid #ccc; border-radius: 6px; padding: 4px 10px; font-size: 11px; color: #666; min-height: 24px; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+.mic-status.listening { border-color: #cc0000; background: #fff5f5; }
+.mic-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
+.mic-dot.active { background: #cc0000; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.speech-log { width: 100%; max-width: 420px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 3px 8px; font-size: 10px; color: #888; min-height: 20px; font-style: italic; margin-bottom: 3px; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 8px; width: 100%; max-width: 420px; }
+button { padding: 8px 16px; border-radius: 6px; border: 1px solid #ccc; font-size: 11px; cursor: pointer; letter-spacing: 1px; background: #fff; color: #333; }
+#micStartBtn { background: #fff0f0; color: #cc0000; border-color: #cc0000; display: none; }
+#exportBtn { background: #f0fff0; color: #336600; border-color: #336600; }
+#resetBtn { background: #fff8f0; color: #996600; border-color: #cc8800; }
+.hint { font-size: 9px; color: #aaa; text-align: center; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<h1>Befundschema</h1>
+<div class="tabs">
+  <button class="tab active" onclick="switchTab(this,'Stand')">Stand</button>
+  <button class="tab" onclick="switchTab(this,'Sitz')">Sitz</button>
+  <button class="tab" onclick="switchTab(this,'Rippe')">Rippe</button>
+  <button class="tab" onclick="switchTab(this,'Rück')">Rück</button>
+  <button class="tab" onclick="switchTab(this,'Zusatz')">Zusatz</button>
+  <button class="tab" onclick="switchTab(this,'Schädel')">Schädel</button>
+</div>
+<div class="legend">
+  <span><span class="dot" style="background:#cc0000"></span>eingeschränkt</span>
+  <span><span class="dot" style="background:#00cc44"></span>physiologisch</span>
+</div>
+<div id="schema-container">
+  <svg id="sv" viewBox="-45 -70 390 530" style="display:block;width:100%;max-width:360px;"></svg>
+</div>
+<div class="status-bar" id="sb">Symbol antippen oder sprechen</div>
+<div class="mic-status" id="micStatus">
+  <span class="mic-dot" id="micDot"></span>
+  <span id="micText">Mikrofon wird gestartet…</span>
+</div>
+<div class="speech-log" id="speechLog">Warte auf Spracheingabe…</div>
+<p class="hint">1× = eingeschränkt/frei · 2× = zurücksetzen</p>
+<div class="controls">
+  <button id="micStartBtn" onclick="startRecognition()">🎤 Mikrofon starten</button>
+  <button id="audioBtn" onclick="aktiviereAudio()" style="background:#fff0e0;color:#996600;border-color:#cc8800;">🔔 Ton aktivieren</button>
+  <button id="exportBtn" onclick="exportBefund()">📸 Exportieren</button>
+  <button id="resetBtn" onclick="resetAll()">↺ Zurücksetzen</button>
+</div>
+
+<script>
+function switchTab(btn, name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('sb').textContent='Tab: '+name+' (wird noch gebaut)';
+}
+
+// ─── KONSTANTEN ───────────────────────────────────────────────────────────────
+const svg=document.getElementById('sv');
+const NS="http://www.w3.org/2000/svg";
+const CX=150,SW=2;
+const LX=50,RX=250;
+const ANGLE=12,ARM=100;
+const r=ANGLE*Math.PI/180;
+const dx=ARM*Math.cos(r),dy=ARM*Math.sin(r);
+const CY_TOP=55,GAP=40,LGAP=80;
+const Y1=CY_TOP+GAP,Y2=Y1+LGAP,Y3=Y2+LGAP;
+const CY_BOT=Y3+GAP;
+const SKOL_Y=(Y1+Y2)/2;
+const ARROW_OVERLAP=8,TIP=9;
+const CIRCLE_EXTRA=25;
+const FX_L=Math.round(CX-dx),FX_R=Math.round(CX+dx);
+const FY=Math.round(CY_BOT+dy)+18+CIRCLE_EXTRA;
+const TRI_L_X=LX+20,TRI_R_X=RX-20;
+const LABEL_OFFSET=35;
+const P_L1=98,P_L2=123,P_R1=177,P_R2=202;
+const CR=14;
+const SC_L_X=-20,SC_R_X=320,SC_Y=Y1;
+const HWS_D=28;
+const HWS_Y=CY_TOP-dy-18;
+const HWS_L_CX=CX-dx/2,HWS_R_CX=CX+dx/2;
+const WS_Y=(Y2+Y3)/2,WS_L_CX=TRI_L_X,WS_R_CX=TRI_R_X;
+const PL=32,PR=268;
+
+const COL='#222222',COL_DASH='#aaaaaa',COL_BG='#ffffff';
+const STATES=['neutral','restricted','free'];
+const LABELS={neutral:'neutral',restricted:'eingeschränkt',free:'frei (physiologisch)'};
+const SCOL={neutral:COL,restricted:'#cc0000',improved:'#cc8800',free:'#00aa33'};
+const FCOL={neutral:COL,restricted:'#cc0000',improved:'#cc8800',free:'#00aa33'};
+const DCOL={neutral:COL_DASH,restricted:'#cc0000',improved:'#cc8800',free:'#336600'};
+const TCOL={neutral:COL,restricted:'#cc0000',improved:'#cc8800',free:'#336600'};
+
+const sm={};
+const reg={};
+const lineFns={};
+
+function el(tag,attrs){const e=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));svg.appendChild(e);return e;}
+function cs(id){return sm[id]==='neutral'?'restricted':'neutral';}
+function csPhysio(id){
+  // Physiologische Symbole: neutral->free->neutral (grün, nicht rot)
+  return sm[id]==='neutral'?'free':'neutral';
+}
+function csComp(id){
+  // Kompensation/Wendepunkt: immer rot
+  return sm[id]==='neutral'?'restricted':'neutral';
+}
+function reg2(id,fn,label){sm[id]='neutral';reg[id]={cycle:fn,label};}
+// ─── AUDIO FEEDBACK ──────────────────────────────────────────────────────────
+let audioCtx=null;
+function playTon(freq,dauer,typ='sine'){
+  try{
+    if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended') audioCtx.resume();
+    const osc=audioCtx.createOscillator();
+    const gain=audioCtx.createGain();
+    osc.connect(gain);gain.connect(audioCtx.destination);
+    osc.type=typ;osc.frequency.setValueAtTime(freq,audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.3,audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dauer);
+    osc.start();osc.stop(audioCtx.currentTime+dauer);
+  }catch(e){}
+}
+function aktiviereAudio(){
+  try{
+    if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    audioCtx.resume().then(()=>{
+      // Testton
+      const osc=audioCtx.createOscillator();
+      const gain=audioCtx.createGain();
+      osc.connect(gain);gain.connect(audioCtx.destination);
+      osc.frequency.value=880;
+      gain.gain.setValueAtTime(0.3,audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.3);
+      osc.start();osc.stop(audioCtx.currentTime+0.3);
+      document.getElementById('audioBtn').textContent='🔔 Ton aktiv';
+      document.getElementById('audioBtn').style.background='#f0fff0';
+      document.getElementById('audioBtn').style.color='#336600';
+    });
+  }catch(e){console.log('Audio Fehler:',e);}
+}
+
+function tonErfolgreich(){
+  // Zwei kurze helle Töne
+  playTon(880,0.1,'sine');
+  setTimeout(()=>playTon(1100,0.1,'sine'),120);
+}
+function tonNichtErkannt(){
+  // Ein tiefer langer Ton
+  playTon(180,0.5,'triangle');
+}
+
+function showSb(label,state){
+  const sb=document.getElementById('sb');
+  if(state==='neutral')sb.innerHTML=label+' — zurückgesetzt';
+  else{const cls='state-'+state;sb.innerHTML=`<span class="name">${label}</span> → <span class="${cls}">${LABELS[state]}</span>`;}
+}
+function mkl(x1,y1,x2,y2,extra={}){return el('line',{x1,y1,x2,y2,stroke:COL,'stroke-width':SW,'stroke-linecap':'round',...extra});}
+function hit(x,y,w,h){return el('rect',{x,y,width:w,height:h,fill:'transparent'});}
+function stxt(x,y,s,sz=8){const t=el('text',{x,y,'text-anchor':'middle','dominant-baseline':'middle','font-size':sz,fill:'#666','pointer-events':'none'});t.textContent=s;return t;}
+
+function ctxt(id,x,y,s,sz,label,anchor='middle'){
+  const t=el('text',{x,y,'text-anchor':anchor,'dominant-baseline':'middle','font-size':sz,fill:COL});
+  t.style.cursor='pointer';t.textContent=s;svg.appendChild(t);
+  const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',TCOL[next]);showSb(label,next);};
+  reg2(id,fn,label);t.addEventListener('click',fn);return t;
+}
+
+function plus(id,x,y,label){
+  const t=el('text',{x,y,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:COL});
+  t.style.cursor='pointer';t.textContent='+';svg.appendChild(t);
+  const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',FCOL[next]);showSb(label||id,next);};
+  reg2(id,fn,label||id);t.addEventListener('click',fn);return t;
+}
+
+function circle(id,x,y,label){
+  sm[id]='neutral';
+  const c=el('circle',{cx:x,cy:y,r:CR,fill:COL_BG,stroke:COL,'stroke-width':SW});
+  c.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;c.setAttribute('stroke',SCOL[next]);showSb(label,next);};
+  reg2(id,fn,label);c.addEventListener('click',fn);return c;
+}
+
+// Schulterkreis mit Auto-Einfärben wenn F/ABD/KIR/KAR aktiv
+function shoulderCircle(side){
+  const cx=side==='L'?SC_L_X:SC_R_X,cy=SC_Y;
+  const circ=circle(`Schulter-${side}`,cx,cy,`Schulter ${side}`);
+
+  function updateCircle(){
+    const tests=[`F-${side}`,`ABD-${side}`,`KIR-${side}`,`KAR-${side}`];
+    const active=tests.find(id=>sm[id]&&sm[id]!=='neutral');
+    if(active) circ.setAttribute('stroke',SCOL[sm[active]]);
+    else if(sm[`Schulter-${side}`]==='neutral') circ.setAttribute('stroke',COL);
+  }
+
+  function makeSub(id,x,y,s,sz,label){
+    const t=el('text',{x,y,'text-anchor':'middle','dominant-baseline':'middle','font-size':sz,fill:COL});
+    t.style.cursor='pointer';t.textContent=s;svg.appendChild(t);
+    const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',TCOL[next]);updateCircle();showSb(label,next);};
+    reg2(id,fn,label);t.addEventListener('click',fn);
+  }
+
+  makeSub(`ABD-${side}`,cx,cy-CR-9,'ABD',8,`Abduktion Schulter ${side}`);
+  makeSub(`F-${side}`,cx,cy-CR-20,'F',9,`Flexion Schulter ${side}`);
+  makeSub(`KIR-${side}`,cx,cy+CR+10,'KIR',8,`Komplette Innenrotation Schulter ${side}`);
+  makeSub(`KAR-${side}`,cx,cy+CR+22,'KAR',8,`Komplette Außenrotation Schulter ${side}`);
+}
+
+function arrUp(id,x,lineY,label){
+  sm[id]='neutral';
+  const yB=lineY+ARROW_OVERLAP,yT=lineY-ARROW_OVERLAP-TIP,yTB=yT+TIP;
+  const l=mkl(x,yB,x,yTB);
+  const p=el('polygon',{points:`${x},${yT} ${x-TIP/2},${yTB} ${x+TIP/2},${yTB}`,fill:COL});
+  const h=hit(x-8,yT,16,yB-yT);h.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;l.setAttribute('stroke',SCOL[next]);p.setAttribute('fill',FCOL[next]);showSb(label||id,next);};
+  reg2(id,fn,label||id);h.addEventListener('click',fn);
+  return {l,p};
+}
+
+function arrDown(id,x,lineY,label){
+  sm[id]='neutral';
+  const yT=lineY-ARROW_OVERLAP,yTip=lineY+ARROW_OVERLAP+TIP,yTB=yTip-TIP;
+  const l=mkl(x,yT,x,yTB);
+  const p=el('polygon',{points:`${x},${yTip} ${x-TIP/2},${yTB} ${x+TIP/2},${yTB}`,fill:COL});
+  const h=hit(x-8,yT,16,yTip-yT);h.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;l.setAttribute('stroke',SCOL[next]);p.setAttribute('fill',FCOL[next]);showSb(label||id,next);};
+  reg2(id,fn,label||id);h.addEventListener('click',fn);
+  return {l,p};
+}
+
+// Querlinie mit Richtungspfeilen + optional Plus als Gruppe
+function hlineDir(idL,idR,y,labelL,labelR,plusIdL,plusIdR,plusLabelL,plusLabelR,physioSide){
+  const linie=mkl(LX,y,RX,y);
+  const s=8;
+  const ptsL=`${LX-s},${y} ${LX},${y-s*.6} ${LX},${y+s*.6}`;
+  const ptsR=`${RX+s},${y} ${RX},${y-s*.6} ${RX},${y+s*.6}`;
+  const triL=el('polygon',{points:ptsL,fill:'none',stroke:COL,'stroke-width':1.5});
+  const triR=el('polygon',{points:ptsR,fill:'none',stroke:COL,'stroke-width':1.5});
+  sm[idL]='neutral';sm[idR]='neutral';
+  const hL=hit(LX-s-4,y-s-4,s*2+8,s*2+8);hL.style.cursor='pointer';
+  const hR=hit(RX-s-4,y-s-4,s*2+8,s*2+8);hR.style.cursor='pointer';
+
+  const cycL=(withPlus,physio=false)=>{
+    const next=physio&&physioSide==='L'?csPhysio(idL):cs(idL);sm[idL]=next;sm[idR]='neutral';
+    triR.setAttribute('stroke',COL);linie.setAttribute('stroke',SCOL[next]);triL.setAttribute('stroke',SCOL[next]);
+    if(withPlus&&plusIdL&&reg[plusIdL]){sm[plusIdL]=next;const pt=svg.querySelector(`[data-plus="${plusIdL}"]`);if(pt)pt.setAttribute('fill',FCOL[next]);}
+    showSb(withPlus?(plusLabelL||labelL):labelL,next);
+  };
+  const cycR=(withPlus,physio=false)=>{
+    const next=physio&&physioSide==='R'?csPhysio(idR):cs(idR);sm[idR]=next;sm[idL]='neutral';
+    triL.setAttribute('stroke',COL);linie.setAttribute('stroke',SCOL[next]);triR.setAttribute('stroke',SCOL[next]);
+    if(withPlus&&plusIdR&&reg[plusIdR]){sm[plusIdR]=next;const pt=svg.querySelector(`[data-plus="${plusIdR}"]`);if(pt)pt.setAttribute('fill',FCOL[next]);}
+    showSb(withPlus?(plusLabelR||labelR):labelR,next);
+  };
+
+  reg2(idL,()=>cycL(false,true),labelL);reg2(idR,()=>cycR(false,true),labelR);
+  if(plusIdL) reg2(plusIdL+'_komp',()=>cycL(true,false),plusLabelL||labelL);
+  if(plusIdR) reg2(plusIdR+'_komp',()=>cycR(true,false),plusLabelR||labelR);
+  hL.addEventListener('click',()=>cycL(false,true));
+  hR.addEventListener('click',()=>cycR(false,true));
+  // Wendepunkt: beide Dreiecke + Linie einfärben
+  lineFns[idL]=(next)=>{
+    sm[idL]=next;sm[idR]=next;
+    linie.setAttribute('stroke',SCOL[next]);
+    triL.setAttribute('stroke',SCOL[next]);
+    triR.setAttribute('stroke',SCOL[next]);
+  };
+}
+
+function plusMark(id,x,y,label){
+  const t=el('text',{x,y,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:COL});
+  t.style.cursor='pointer';t.textContent='+';t.setAttribute('data-plus',id);svg.appendChild(t);
+  const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',FCOL[next]);showSb(label||id,next);};
+  reg2(id,fn,label||id);t.addEventListener('click',fn);return t;
+}
+
+function cross2(idA,idB,my,labelA,labelB){
+  const lA1=mkl(CX,my,CX-dx,my+dy),lA2=mkl(CX,my,CX+dx,my-dy);
+  const lB1=mkl(CX,my,CX-dx,my-dy),lB2=mkl(CX,my,CX+dx,my+dy);
+  sm[idA]='neutral';sm[idB]='neutral';
+  const hA1=el('line',{x1:CX,y1:my,x2:CX-dx,y2:my+dy,stroke:'transparent','stroke-width':14,'stroke-linecap':'round'});
+  const hA2=el('line',{x1:CX,y1:my,x2:CX+dx,y2:my-dy,stroke:'transparent','stroke-width':14,'stroke-linecap':'round'});
+  const hB1=el('line',{x1:CX,y1:my,x2:CX-dx,y2:my-dy,stroke:'transparent','stroke-width':14,'stroke-linecap':'round'});
+  const hB2=el('line',{x1:CX,y1:my,x2:CX+dx,y2:my+dy,stroke:'transparent','stroke-width':14,'stroke-linecap':'round'});
+  const fnA=()=>{const next=cs(idA);sm[idA]=next;[lA1,lA2].forEach(l=>l.setAttribute('stroke',SCOL[next]));showSb(labelA,next);};
+  const fnB=()=>{const next=cs(idB);sm[idB]=next;[lB1,lB2].forEach(l=>l.setAttribute('stroke',SCOL[next]));showSb(labelB,next);};
+  reg2(idA,fnA,labelA);reg2(idB,fnB,labelB);
+  [hA1,hA2].forEach(h=>{h.style.cursor='pointer';h.addEventListener('click',fnA);});
+  [hB1,hB2].forEach(h=>{h.style.cursor='pointer';h.addEventListener('click',fnB);});
+}
+
+function splitEllipse(idL,idR,yTop,yBot,labelL,labelR){
+  const cy=(yTop+yBot)/2,ry=(yBot-yTop)/2,rx=12;
+  const pL=el('path',{d:`M ${CX} ${cy-ry} A ${rx} ${ry} 0 0 0 ${CX} ${cy+ry}`,fill:'none',stroke:COL_DASH,'stroke-width':1.5,'stroke-dasharray':'4,3'});
+  const pR=el('path',{d:`M ${CX} ${cy-ry} A ${rx} ${ry} 0 0 1 ${CX} ${cy+ry}`,fill:'none',stroke:COL_DASH,'stroke-width':1.5,'stroke-dasharray':'4,3'});
+  const hL=hit(CX-rx-4,cy-ry-4,rx+4,ry*2+8),hR=hit(CX,cy-ry-4,rx+4,ry*2+8);
+  hL.style.cursor='pointer';hR.style.cursor='pointer';sm[idL]='neutral';sm[idR]='neutral';
+  const fnL=()=>{const next=cs(idL);sm[idL]=next;pL.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(labelL,next);};
+  const fnR=()=>{const next=cs(idR);sm[idR]=next;pR.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(labelR,next);};
+  reg2(idL,fnL,labelL);reg2(idR,fnR,labelR);
+  hL.addEventListener('click',fnL);hR.addEventListener('click',fnR);
+}
+
+function tri(id,x,y,dir,label){
+  const s=20;
+  const pts=dir==='left'?`${x-s},${y} ${x},${y-s*.6} ${x},${y+s*.6}`:`${x+s},${y} ${x},${y-s*.6} ${x},${y+s*.6}`;
+  const p=el('polygon',{points:pts,fill:'none',stroke:COL,'stroke-width':SW});
+  sm[id]='neutral';p.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;p.setAttribute('stroke',SCOL[next]);showSb(label,next);};
+  reg2(id,fn,label);p.addEventListener('click',fn);
+}
+
+function makeSign(id,x,y,sign,label){
+  const t=el('text',{x,y,'text-anchor':'middle','dominant-baseline':'middle','font-size':26,fill:COL});
+  t.style.cursor='pointer';t.textContent=sign;svg.appendChild(t);sm[id]='neutral';
+  const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',FCOL[next]);showSb(label,next);};
+  reg2(id,fn,label);t.addEventListener('click',fn);
+}
+
+function bracket(id,cx,yTop,yBot,dir,label){
+  const ry=(yBot-yTop)/2,cy=(yTop+yBot)/2,rx=14;
+  const d=dir==='left'?`M ${cx} ${cy-ry} A ${rx} ${ry} 0 0 0 ${cx} ${cy+ry}`:`M ${cx} ${cy-ry} A ${rx} ${ry} 0 0 1 ${cx} ${cy+ry}`;
+  const p=el('path',{d,fill:'none',stroke:COL_DASH,'stroke-width':SW,'stroke-dasharray':'4,3'});
+  const h=hit(cx-rx-4,cy-ry-4,rx*2+8,ry*2+8);h.style.cursor='pointer';sm[id]='neutral';
+  const fn=()=>{const next=cs(id);sm[id]=next;p.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(label,next);};
+  reg2(id,fn,label);h.addEventListener('click',fn);
+}
+
+function dashLine(id,cx,cy,dir,label){
+  sm[id]='neutral';const half=HWS_D/2;
+  const l=dir==='/'
+    ?el('line',{x1:cx-half,y1:cy+half,x2:cx+half,y2:cy-half,stroke:COL_DASH,'stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'4,3'})
+    :el('line',{x1:cx-half,y1:cy-half,x2:cx+half,y2:cy+half,stroke:COL_DASH,'stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'4,3'});
+  const h=hit(cx-half-6,cy-half-6,HWS_D+12,HWS_D+12);h.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;console.log('beckenshift fn aufgerufen, next=',next,'l=',l);l.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(label,next);};
+  reg2(id,fn,label);h.addEventListener('click',fn);
+}
+
+function hwsRot(id,cx,cy,arcDir,triDir,label){
+  sm[id]='neutral';const R=12,ts=6;const sweep=arcDir==='right'?1:0;
+  const arc=el('path',{d:`M ${cx} ${cy-R} A ${R} ${R} 0 0 ${sweep} ${cx} ${cy+R}`,fill:'none',stroke:COL_DASH,'stroke-width':SW,'stroke-dasharray':'4,3'});
+  const triPts=triDir==='right'?`${cx+ts},${cy} ${cx-ts/2},${cy-ts} ${cx-ts/2},${cy+ts}`:`${cx-ts},${cy} ${cx+ts/2},${cy-ts} ${cx+ts/2},${cy+ts}`;
+  const triEl=el('polygon',{points:triPts,fill:COL_DASH,stroke:'none'});
+  const h=hit(cx-R-6,cy-R-6,R*2+12,R*2+12);h.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;const col=next==='neutral'?COL_DASH:SCOL[next];arc.setAttribute('stroke',col);triEl.setAttribute('fill',col);showSb(label,next);};
+  reg2(id,fn,label);h.addEventListener('click',fn);
+}
+
+function slashL(id,yCenter,label){
+  const dX=14,dY=14;const l=mkl(2,yCenter-dY/2,2+dX,yCenter+dY/2);
+  const h=hit(0,yCenter-dY/2-4,dX+4,dY+8);h.style.cursor='pointer';sm[id]='neutral';
+  const fn=()=>{const next=cs(id);sm[id]=next;l.setAttribute('stroke',SCOL[next]);showSb(label||id,next);};
+  reg2(id,fn,label||id);[l,h].forEach(e=>e.addEventListener('click',fn));
+  return l;
+}
+function slashR(id,yCenter,label){
+  const dX=14,dY=14;const l=mkl(284,yCenter+dY/2,284+dX,yCenter-dY/2);
+  const h=hit(282,yCenter-dY/2-4,dX+4,dY+8);h.style.cursor='pointer';sm[id]='neutral';
+  const fn=()=>{const next=cs(id);sm[id]=next;l.setAttribute('stroke',SCOL[next]);showSb(label||id,next);};
+  reg2(id,fn,label||id);[l,h].forEach(e=>e.addEventListener('click',fn));
+  return l;
+}
+
+// Laterale Kraftlinie — alle 3 Linien zusammen
+function lateralKraftlinie(side){
+  const ys=[(Y2+Y3)/2,(Y1+Y2)/2,Y1-14];
+  const lines=[];
+  if(side==='L') ys.forEach((y,i)=>{lines.push(slashL(`slash-L-${i}`,y));});
+  else ys.forEach((y,i)=>{lines.push(slashR(`slash-R-${i}`,y));});
+
+  const id=`lateral-${side}`;
+  sm[id]='neutral';
+  const fn=()=>{
+    const next=cs(id);sm[id]=next;
+    lines.forEach(l=>l.setAttribute('stroke',SCOL[next]));
+    ys.forEach((_,i)=>{sm[`slash-${side}-${i}`]=next;});
+    showSb(`Laterale Kraftlinie ${side}`,next);
+  };
+  reg2(id,fn,`Laterale Kraftlinie ${side}`);
+}
+
+// Vordere/Hintere Kraftlinien (Pfeile über beide Querlinien)
+function kraftlinie(id,side,dir,label){
+  // side: L/R, dir: up=vordere, down=hintere
+  const x=side==='L'?(dir==='up'?P_L2:P_L1):(dir==='up'?P_R1:P_R2);
+  const {l:l2,p:p2}=dir==='up'?arrUp(`${id}_2`,x,Y2,label):arrDown(`${id}_2`,x,Y2,label);
+  const {l:l3,p:p3}=dir==='up'?arrUp(`${id}_3`,x,Y3,label):arrDown(`${id}_3`,x,Y3,label);
+  sm[`${id}_2`]='neutral';sm[`${id}_3`]='neutral';
+
+  const fn=()=>{
+    const next=cs(id);sm[id]=next;
+    sm[`${id}_2`]=next;sm[`${id}_3`]=next;
+    [l2,l3].forEach(l=>l.setAttribute('stroke',SCOL[next]));
+    [p2,p3].forEach(p=>p.setAttribute('fill',FCOL[next]));
+    showSb(label,next);
+  };
+  reg2(id,fn,label);
+}
+
+// Beckenshift — senkrechte gestrichelte Linie, Länge = dy (Öffnung des Kreuzes)
+function beckenshift(id,cx,cy,label){
+  sm[id]='neutral';
+  const l=el('line',{x1:cx,y1:cy-HWS_D/2,x2:cx,y2:cy+HWS_D/2,
+    stroke:COL_DASH,'stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'3,2'});
+  const h=hit(cx-8,cy-HWS_D/2-4,16,HWS_D+8);h.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;console.log('beckenshift fn aufgerufen, next=',next,'l=',l);l.setAttribute('stroke',next==='neutral'?COL_DASH:SCOL[next]);showSb(label,next);};
+  reg2(id,fn,label);h.addEventListener('click',fn);
+}
+
+// ─── SVG AUFBAU ───────────────────────────────────────────────────────────────
+
+// HWS
+dashLine('HWS-Seitneigung-R',HWS_L_CX,HWS_Y,'/','Seitneigung HWS rechts');
+dashLine('HWS-Seitneigung-L',HWS_R_CX,HWS_Y,'\\','Seitneigung HWS links');
+hwsRot('HWS-Rotation-R',HWS_L_CX-28,HWS_Y,'left','right','Rotation HWS rechts');
+hwsRot('HWS-Rotation-L',HWS_R_CX+28,HWS_Y,'right','left','Rotation HWS links');
+
+stxt(20,12,'L',9);stxt(280,12,'R',9);
+// Mittellinie durchgehend — Skoliose-Linie liegt darüber
+mkl(CX,CY_TOP,CX,CY_BOT);
+
+cross2('schultern-slash','schultern-backslash',CY_TOP,'Schulterhochstand links','Schulterhochstand rechts');
+cross2('knie-slash','knie-backslash',CY_BOT,'Beckenhochstand links','Beckenhochstand rechts');
+
+// Keine Skoliose-Mittellinie mehr
+
+tri('taillen-L',TRI_L_X,SKOL_Y,'left','Tailliendreieck links größer');
+tri('taillen-R',TRI_R_X,SKOL_Y,'right','Tailliendreieck rechts größer');
+
+splitEllipse('Skoliose-thorakal-L','Skoliose-thorakal-R',Y1,Y2,'Skoliose thorakal links','Skoliose thorakal rechts');
+splitEllipse('Skoliose-lumbal-L','Skoliose-lumbal-R',Y2,Y3,'Skoliose lumbal links','Skoliose lumbal rechts');
+
+// WS Seitneigung
+dashLine('WS-Seitneigung-R',WS_L_CX,WS_Y,'/','Seitneigung WS rechts');
+dashLine('WS-Seitneigung-L',WS_R_CX,WS_Y,'\\','Seitneigung WS links');
+
+// Laterale Kraftlinien (3 Linien je Seite)
+lateralKraftlinie('L');
+lateralKraftlinie('R');
+
+// (←) und (→) als echte SVG-Pfeile in Klammern
+{
+  const id='thorax-links', cx=CX-LABEL_OFFSET, cy=SKOL_Y, label='Vagus blockiert / Thorax links um';
+  sm[id]='neutral';
+  const TS=5, PL2=8;
+  // Klammern
+  const tL=el('text',{x:cx-PL2-2,y:cy,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:'#222','pointer-events':'none'});tL.textContent='(';svg.appendChild(tL);
+  const tR=el('text',{x:cx+PL2+2,y:cy,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:'#222','pointer-events':'none'});tR.textContent=')';svg.appendChild(tR);
+  // Pfeil nach links
+  const shaft=el('line',{x1:cx+PL2-2,y1:cy,x2:cx-PL2+TS,y2:cy,stroke:'#222','stroke-width':1.5,'stroke-linecap':'round'});
+  const tip=el('polygon',{points:`${cx-PL2},${cy} ${cx-PL2+TS},${cy-TS/2} ${cx-PL2+TS},${cy+TS/2}`,fill:'#222'});
+  const h=el('rect',{x:cx-PL2-6,y:cy-8,width:PL2*2+12,height:16,fill:'transparent'});h.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;const col=next==='neutral'?'#222':({restricted:'#cc0000',improved:'#cc8800',free:'#336600'}[next]);[tL,tR].forEach(t=>t.setAttribute('fill',col));shaft.setAttribute('stroke',col);tip.setAttribute('fill',col);showSb(label,next);};
+  reg2(id,fn,label);h.addEventListener('click',fn);
+}
+{
+  const id='becken-rechts', cx=CX+LABEL_OFFSET, cy=(Y2+Y3)/2, label='Vagus blockiert / Becken rechts um';
+  sm[id]='neutral';
+  const TS=5, PL2=8;
+  const tL=el('text',{x:cx-PL2-2,y:cy,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:'#222','pointer-events':'none'});tL.textContent='(';svg.appendChild(tL);
+  const tR=el('text',{x:cx+PL2+2,y:cy,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:'#222','pointer-events':'none'});tR.textContent=')';svg.appendChild(tR);
+  // Pfeil nach rechts
+  const shaft=el('line',{x1:cx-PL2+2,y1:cy,x2:cx+PL2-TS,y2:cy,stroke:'#222','stroke-width':1.5,'stroke-linecap':'round'});
+  const tip=el('polygon',{points:`${cx+PL2},${cy} ${cx+PL2-TS},${cy-TS/2} ${cx+PL2-TS},${cy+TS/2}`,fill:'#222'});
+  const h=el('rect',{x:cx-PL2-6,y:cy-8,width:PL2*2+12,height:16,fill:'transparent'});h.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;const col=next==='neutral'?'#222':({restricted:'#cc0000',improved:'#cc8800',free:'#336600'}[next]);[tL,tR].forEach(t=>t.setAttribute('fill',col));shaft.setAttribute('stroke',col);tip.setAttribute('fill',col);showSb(label,next);};
+  reg2(id,fn,label);h.addEventListener('click',fn);
+}
+
+// Schultergürtel
+hlineDir('Schultergürtel-L','Schultergürtel-R',Y1,
+  'Rotation Schultergürtel nach links','Rotation Schultergürtel nach rechts',
+  'plusSG-L','plusSG-R',
+  'Kompensation Schultergürtel links','Kompensation Schultergürtel rechts','L');
+plusMark('plusSG-L',PL,Y1,'Kompensation Schultergürtel links');
+plusMark('plusSG-R',PR,Y1,'Kompensation Schultergürtel rechts');
+
+shoulderCircle('L');shoulderCircle('R');
+
+// Wendepunkt — simuliert Klick auf beide Seiten nacheinander
+// Aber verhindert das gegenseitige Reset durch temporäres Überschreiben
+function makeWendepunkt(id, idL, idR, label){
+  sm[id]='neutral';
+  const fn=()=>{
+    const next=cs(id);sm[id]=next;
+    if(lineFns[idL]) lineFns[idL](next);
+    showSb(label,next);
+  };
+  reg2(id,fn,label);
+}
+makeWendepunkt('wendepunkt-SG','Schultergürtel-L','Schultergürtel-R','Wendepunkt Schultergürtel');
+makeWendepunkt('wendepunkt-Th','Thorax-L','Thorax-R','Wendepunkt Thorax');
+makeWendepunkt('wendepunkt-Be','Becken-L','Becken-R','Wendepunkt Becken');
+
+// Thorax
+hlineDir('Thorax-L','Thorax-R',Y2,
+  'Rotation Thorax nach links','Rotation Thorax nach rechts',
+  'plusTh-L','plusTh-R',
+  'Kompensation Thorax links','Kompensation Thorax rechts','R');
+plusMark('plusTh-L',PL,Y2,'Kompensation Thorax links');
+plusMark('plusTh-R',PR,Y2,'Kompensation Thorax rechts');
+
+// Kraftlinien (Pfeile über beide Querlinien)
+kraftlinie('VKL-R','R','up','Vordere Kraftlinie rechts');
+kraftlinie('VKL-L','L','up','Vordere Kraftlinie links');
+kraftlinie('HKL-R','R','down','Hintere Kraftlinie rechts');
+kraftlinie('HKL-L','L','down','Hintere Kraftlinie links');
+
+// Becken
+hlineDir('Becken-L','Becken-R',Y3,
+  'Rotation Becken nach links','Rotation Becken nach rechts',
+  'plusBe-L','plusBe-R',
+  'Kompensation Becken links','Kompensation Becken rechts','L');
+plusMark('plusBe-L',PL,Y3,'Kompensation Becken links');
+plusMark('plusBe-R',PR,Y3,'Kompensation Becken rechts');
+
+// Knie/Füße
+circle('knie-L',FX_L,FY,'Hyperextension linkes Knie');
+circle('knie-R',FX_R,FY,'Hyperextension rechtes Knie');
+makeSign('flexion-knie-L',FX_L,FY+32,'<','Flexion linkes Knie');
+makeSign('flexion-knie-R',FX_R,FY+32,'>','Flexion rechtes Knie');
+
+{const d=14;
+ const lL=mkl(FX_L-d/2,FY+56-d/2,FX_L+d/2,FY+56+d/2);
+ const hL=hit(FX_L-d/2-4,FY+56-d/2-4,d+8,d+8);hL.style.cursor='pointer';sm['knickfuss-L']='neutral';
+ const fn=()=>{const next=cs('knickfuss-L');sm['knickfuss-L']=next;lL.setAttribute('stroke',SCOL[next]);showSb('Knickfuß links',next);};
+ reg2('knickfuss-L',fn,'Knickfuß links');[lL,hL].forEach(e=>e.addEventListener('click',fn));
+}
+{const d=14;
+ const lR=mkl(FX_R+d/2,FY+56-d/2,FX_R-d/2,FY+56+d/2);
+ const hR=hit(FX_R-d/2-4,FY+56-d/2-4,d+8,d+8);hR.style.cursor='pointer';sm['knickfuss-R']='neutral';
+ const fn=()=>{const next=cs('knickfuss-R');sm['knickfuss-R']=next;lR.setAttribute('stroke',SCOL[next]);showSb('Knickfuß rechts',next);};
+ reg2('knickfuss-R',fn,'Knickfuß rechts');[lR,hR].forEach(e=>e.addEventListener('click',fn));
+}
+
+// Klammern (O-Bein / X-Bein)
+const bTop=FY-18,bBot=FY+46;
+bracket('o-bein-L',FX_L-22,bTop,bBot,'left','O-Bein links');
+bracket('x-bein-L',FX_L+22,bTop,bBot,'right','X-Bein links');
+bracket('x-bein-R',FX_R-22,bTop,bBot,'left','X-Bein rechts');
+bracket('o-bein-R',FX_R+22,bTop,bBot,'right','O-Bein rechts');
+
+// Beckenshift — senkrechte Linie neben offenem Kreuzende
+beckenshift('beckenshift-L',CX-dx-16,CY_BOT,'Beckenshift nach links');
+beckenshift('beckenshift-R',CX+dx+16,CY_BOT,'Beckenshift nach rechts');
+// Sicherheitscheck
+setTimeout(()=>{
+  if(!reg['beckenshift-L']) console.error('beckenshift-L nicht registriert!');
+  if(!reg['beckenshift-R']) console.error('beckenshift-R nicht registriert!');
+},1000);
+
+// FFA
+{
+  let ffaWert='';
+  const ffaL=el('text',{x:CX,y:FY,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:COL});
+  ffaL.textContent='FFA';ffaL.style.cursor='pointer';ffaL.setAttribute('data-ffa','label');svg.appendChild(ffaL);
+  const ffaV=el('text',{x:CX,y:FY+18,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+  ffaV.textContent='— cm';ffaV.style.cursor='pointer';ffaV.setAttribute('data-ffa','wert');svg.appendChild(ffaV);
+  const activate=()=>{sm['FFA']='restricted';ffaL.setAttribute('fill','#cc0000');ffaV.setAttribute('fill','#cc0000');showSb('FFA','restricted');};
+  ffaL.addEventListener('click',()=>{
+    const next=cs('FFA');sm['FFA']=next;
+    const col=next==='neutral'?COL:'#cc0000';
+    ffaL.setAttribute('fill',col);ffaV.setAttribute('fill',col);showSb('FFA',next);
+  });
+  ffaV.addEventListener('click',()=>{
+    const val=prompt('FFA Wert in cm:',ffaWert||'');
+    if(val!==null){ffaWert=val.trim();ffaV.textContent=ffaWert?ffaWert+' cm':'— cm';if(ffaWert)activate();}
+  });
+  reg2('FFA',activate,'Finger-Fußboden-Abstand');
+}
+
+// ─── SPRACHBEGRIFFE ───────────────────────────────────────────────────────────
+const speechMap=[
+  // HWS — spezifisch zuerst (längere Phrasen)
+  ['hws seitneigung nach rechts','HWS-Seitneigung-R'],
+  ['seitneigung hws nach rechts','HWS-Seitneigung-R'],
+  ['seitneigung hws nach rechts eingeschränkt','HWS-Seitneigung-R'],
+  ['habe es seit neigung nach rechts eingeschränkt','HWS-Seitneigung-R'],
+  ['habe seit neigung nach rechts eingeschränkt','HWS-Seitneigung-R'],
+  ['es seit neigung nach rechts eingeschränkt','HWS-Seitneigung-R'],
+  ['zeitneigung habe es nach rechts eingeschränkt','HWS-Seitneigung-R'],
+  ['habe es zeitneigung nach rechts eingeschränkt','HWS-Seitneigung-R'],
+  ['habe es nach rechts eingeschränkt','HWS-Seitneigung-R'],
+  ['hws zeitneigung nach rechts','HWS-Seitneigung-R'],
+  ['seit neigung hws nach rechts','HWS-Seitneigung-R'],
+  ['zeitneigung hws nach rechts','HWS-Seitneigung-R'],
+  ['seitneigungseinschränkung hws nach rechts','HWS-Seitneigung-R'],
+  ['hws seitneigungseinschränkung nach rechts','HWS-Seitneigung-R'],
+  ['hws seitneigungseinschränkung rechts','HWS-Seitneigung-R'],
+  ['seit neigungseinschränkung hws nach rechts','HWS-Seitneigung-R'],
+  ['seit neigungseinschränkung hws rechts','HWS-Seitneigung-R'],
+  ['hws seitneigung nach links','HWS-Seitneigung-L'],
+  ['seitneigung hws nach links','HWS-Seitneigung-L'],
+  ['seitneigung hws nach links eingeschränkt','HWS-Seitneigung-L'],
+  ['habe es seit neigung nach links eingeschränkt','HWS-Seitneigung-L'],
+  ['habe seit neigung nach links eingeschränkt','HWS-Seitneigung-L'],
+  ['es seit neigung nach links eingeschränkt','HWS-Seitneigung-L'],
+  ['zeitneigung habe es nach links eingeschränkt','HWS-Seitneigung-L'],
+  ['habe es zeitneigung nach links eingeschränkt','HWS-Seitneigung-L'],
+  ['habe es nach links eingeschränkt','HWS-Seitneigung-L'],
+  ['hws zeitneigung nach links','HWS-Seitneigung-L'],
+  ['seit neigung hws nach links','HWS-Seitneigung-L'],
+  ['zeitneigung hws nach links','HWS-Seitneigung-L'],
+  ['seitneigungseinschränkung hws nach links','HWS-Seitneigung-L'],
+  ['hws seitneigungseinschränkung nach links','HWS-Seitneigung-L'],
+  ['hws seitneigungseinschränkung links','HWS-Seitneigung-L'],
+  ['seit neigungseinschränkung hws nach links','HWS-Seitneigung-L'],
+  ['seit neigungseinschränkung hws links','HWS-Seitneigung-L'],
+  ['herzzone','HWS-Seitneigung-R'],
+  ['lungenzone','HWS-Seitneigung-L'],
+  ['rotation halswirbelsäule nach rechts eingeschränkt','HWS-Rotation-R'],
+  ['rotation halswirbelsäule nach rechts','HWS-Rotation-R'],
+  ['halswirbelsäule rotation nach rechts','HWS-Rotation-R'],
+  ['hws rotation nach rechts','HWS-Rotation-R'],
+  ['hws rotation nach rechts eingeschränkt','HWS-Rotation-R'],
+  ['rotation hws nach rechts','HWS-Rotation-R'],
+  ['rotation hws nach rechts eingeschränkt','HWS-Rotation-R'],
+  ['rotationseinschränkung hws nach rechts','HWS-Rotation-R'],
+  ['was nach rechts eingeschränkt','HWS-Rotation-R'],
+  ['habe was nach rechts eingeschränkt','HWS-Rotation-R'],
+  ['habe es rotation nach rechts eingeschränkt','HWS-Rotation-R'],
+  ['es rotation nach rechts eingeschränkt','HWS-Rotation-R'],
+  ['rotation halswirbelsäule nach links eingeschränkt','HWS-Rotation-L'],
+  ['rotation halswirbelsäule nach links','HWS-Rotation-L'],
+  ['halswirbelsäule rotation nach links','HWS-Rotation-L'],
+  ['hws rotation nach links','HWS-Rotation-L'],
+  ['hws rotation nach links eingeschränkt','HWS-Rotation-L'],
+  ['rotation hws nach links','HWS-Rotation-L'],
+  ['rotation hws nach links eingeschränkt','HWS-Rotation-L'],
+  ['rotationseinschränkung hws nach links','HWS-Rotation-L'],
+  ['was nach links eingeschränkt','HWS-Rotation-L'],
+  ['habe was nach links eingeschränkt','HWS-Rotation-L'],
+  ['habe es rotation nach links eingeschränkt','HWS-Rotation-L'],
+  ['es rotation nach links eingeschränkt','HWS-Rotation-L'],
+  // Schulterkreuz
+  ['schulterhochstand rechts','schultern-slash'],
+  ['schulterhochdtan rechts','schultern-slash'],
+  ['schulter hochstand rechts','schultern-slash'],
+  ['schulterhof stand rechts','schultern-slash'],
+  ['schulterhochstand links','schultern-backslash'],
+  ['schulterhochdtan links','schultern-backslash'],
+  ['schulter hochstand links','schultern-backslash'],
+  ['schulterhof stand links','schultern-backslash'],
+  // Schulter
+  ['flexionseinschränkung schulter links','F-L'],['flexionseinschränkung linke schulter','F-L'],
+  ['flexionseinschränkung schulterlinks','F-L'],
+  ['schulterflexionseinschränkung links','F-L'],
+  ['schulterflexion links','F-L'],
+  ['schulterflektion links','F-L'],
+  ['schulterflektionseinschränkung links','F-L'],
+  ['lektionseinschränkung linke schulter','F-L'],['lektionseinschränkung schulter links','F-L'],
+  ['flexion linke schulter','F-L'],
+  ['eingeschränkte flexion linke schulter','F-L'],
+  ['eingeschränkte flexion schulter links','F-L'],
+  ['flexion schulter links','F-L'],['flektion schulter links','F-L'],
+  ['schulter flexion links','F-L'],['schulter flektion links','F-L'],
+  ['flexionseinschränkung schulter rechts','F-R'],['flexionseinschränkung rechte schulter','F-R'],
+  ['flexionseinschränkung schulterrechts','F-R'],
+  ['schulterflexionseinschränkung rechts','F-R'],
+  ['schulterflexion rechts','F-R'],
+  ['schulterflektion rechts','F-R'],
+  ['schulterflektionseinschränkung rechts','F-R'],
+  ['lektionseinschränkung rechte schulter','F-R'],['lektionseinschränkung schulter rechts','F-R'],
+  ['flexion rechte schulter','F-R'],
+  ['eingeschränkte flexion rechte schulter','F-R'],
+  ['eingeschränkte flexion schulter rechts','F-R'],
+  ['flexion schulter rechts','F-R'],['flektion schulter rechts','F-R'],
+  ['schulter flexion rechts','F-R'],['schulter flektion rechts','F-R'],
+  ['abduktionseinschränkung schulter links','ABD-L'],['abduktionseinschränkung linke schulter','ABD-L'],
+  ['abduktionseinschränkung schulterlinks','ABD-L'],
+  ['abduktion schulter links','ABD-L'],['abduktion linke schulter','ABD-L'],['schulter abduktion links','ABD-L'],
+  ['abduktionseinschränkung schulter rechts','ABD-R'],['abduktionseinschränkung rechte schulter','ABD-R'],
+  ['abduktionseinschränkung schulterrechts','ABD-R'],
+  ['abduktion schulter rechts','ABD-R'],['abduktion rechte schulter','ABD-R'],['schulter abduktion rechts','ABD-R'],
+  ['komplette innenrotationseinschränkung links','KIR-L'],['komplette innenrotation links','KIR-L'],
+  ['innenrotationseinschränkung schulter links','KIR-L'],['innenrotation schulter links','KIR-L'],
+  ['innenrotationseinschränkung linke schulter','KIR-L'],
+  ['innenrotationseinschränkungen linke schulter','KIR-L'],
+  ['innenrotationseinschränkungen linke schultern','KIR-L'],
+  ['innenrotationseinschränkung linke schultern','KIR-L'],['innenrotation linke schulter','KIR-L'],
+  ['ker links','KIR-L'],['kir links','KIR-L'],
+  ['komplette innenrotationseinschränkung rechts','KIR-R'],['komplette innenrotation rechts','KIR-R'],
+  ['innenrotationseinschränkung schulter rechts','KIR-R'],['innenrotation schulter rechts','KIR-R'],
+  ['innenrotationseinschränkung rechte schulter','KIR-R'],
+  ['innenrotationseinschränkungen rechte schulter','KIR-R'],
+  ['innenrotationseinschränkungen rechte schultern','KIR-R'],
+  ['innenrotationseinschränkung rechte schultern','KIR-R'],['innenrotation rechte schulter','KIR-R'],
+  ['ker rechts','KIR-R'],['kir rechts','KIR-R'],
+  ['komplette außenrotationseinschränkung links','KAR-L'],['komplette außenrotation links','KAR-L'],
+  ['außenrotationseinschränkung schulter links','KAR-L'],['außenrotation schulter links','KAR-L'],
+  ['außenrotationseinschränkung linke schulter','KAR-L'],['außenrotation linke schulter','KAR-L'],
+  ['kar links','KAR-L'],['k a r links','KAR-L'],['ka ar links','KAR-L'],['car links','KAR-L'],
+  ['kar linke schulter','KAR-L'],['car linke schulter','KAR-L'],
+  ['komplette außenrotationseinschränkung rechts','KAR-R'],['komplette außenrotation rechts','KAR-R'],
+  ['außenrotationseinschränkung schulter rechts','KAR-R'],['außenrotation schulter rechts','KAR-R'],
+  ['außenrotationseinschränkung rechte schulter','KAR-R'],['außenrotation rechte schulter','KAR-R'],
+  ['kar rechts','KAR-R'],['k a r rechts','KAR-R'],['ka ar rechts','KAR-R'],['car rechts','KAR-R'],
+  ['kar rechte schulter','KAR-R'],['car rechte schulter','KAR-R'],
+  // Schultergürtel
+  ['kompensation schultergürtelrotation nach links','plusSG-L_komp'],
+  ['kompensation schultergürtelrotation links','plusSG-L_komp'],
+  ['kompensation schultergürtel rotation links','plusSG-L_komp'],
+  ['kompensation rotation schultergürtel nach links','plusSG-L_komp'],
+  ['kompensation rotation schultergürtel links','plusSG-L_komp'],
+  ['kompensation schultergürtel nach links','plusSG-L_komp'],
+  ['kompensation schultergürtel links','plusSG-L_komp'],
+  ['kompensation schultergürtelrotation nach rechts','plusSG-R_komp'],
+  ['kompensation schultergürtelrotation rechts','plusSG-R_komp'],
+  ['kompensation schultergürtel rotation rechts','plusSG-R_komp'],
+  ['kompensation rotation schultergürtel nach rechts','plusSG-R_komp'],
+  ['kompensation rotation schultergürtel rechts','plusSG-R_komp'],
+  ['kompensation schultergürtel nach rechts','plusSG-R_komp'],
+  ['kompensation schultergürtel rechts','plusSG-R_komp'],
+  ['schultergürtelrotation nach links','Schultergürtel-L'],
+  ['schultergürtelrotation links','Schultergürtel-L'],
+  ['schultergürtel rotation links','Schultergürtel-L'],
+  ['rotation schultergürtel nach links','Schultergürtel-L'],
+  ['schultergürtel rotation links','Schultergürtel-L'],
+  ['schultergürtel links','Schultergürtel-L'],
+  ['schultergürtelrotation nach rechts','Schultergürtel-R'],
+  ['schultergürtelrotation rechts','Schultergürtel-R'],
+  ['schultergürtel rotation rechts','Schultergürtel-R'],
+  ['rotation schultergürtel nach rechts','Schultergürtel-R'],
+  ['schultergürtel rotation rechts','Schultergürtel-R'],
+  ['schultergürtel rechts','Schultergürtel-R'],
+  // Thorax
+  ['kompensation thoraxrotation nach links','plusTh-L_komp'],
+  ['kompensation thoraxrotation links','plusTh-L_komp'],
+  ['kompensation thorax rotation nach links','plusTh-L_komp'],
+  ['kompensation thorax rotation links','plusTh-L_komp'],
+  ['kompensation rotation thorax nach links','plusTh-L_komp'],
+  ['kompensation rotation thorax links','plusTh-L_komp'],
+  ['kompensation thorax links','plusTh-L_komp'],
+  ['kompensation thoraxrotation nach rechts','plusTh-R_komp'],
+  ['kompensation thoraxrotation rechts','plusTh-R_komp'],
+  ['kompensation thorax rotation nach rechts','plusTh-R_komp'],
+  ['kompensation thorax rotation rechts','plusTh-R_komp'],
+  ['kompensation rotation thorax nach rechts','plusTh-R_komp'],
+  ['kompensation rotation thorax rechts','plusTh-R_komp'],
+  ['kompensation thorax rechts','plusTh-R_komp'],
+  ['thoraxrotation nach links','Thorax-L'],
+  ['thorax rotation nach links','Thorax-L'],
+  ['thorax rotation links','Thorax-L'],
+  ['thoraxrotation links','Thorax-L'],
+  ['rotation thorax nach links','Thorax-L'],
+  ['thoraxrotation nach rechts','Thorax-R'],
+  ['thorax rotation nach rechts','Thorax-R'],
+  ['thorax rotation rechts','Thorax-R'],
+  ['thoraxrotation rechts','Thorax-R'],
+  ['rotation thorax nach rechts','Thorax-R'],
+  ['thorax rotation links um','thorax-links'],
+  ['thorax links um','thorax-links'],
+  ['vagus blockiert','thorax-links'],
+  ['vagus blockade','thorax-links'],
+  ['vagos blockiert','thorax-links'],
+  ['vagos blockade','thorax-links'],
+  ['vagos','thorax-links'],
+  ['markus blockiert','thorax-links'],
+  ['markus blockade','thorax-links'],
+  ['markus blockierung thorax','thorax-links'],
+  ['markus blockierung','thorax-links'],
+  ['thorax links um','thorax-links'],
+  ['markus','thorax-links'],
+  // Becken
+  ['kompensation beckenrotation nach links','plusBe-L_komp'],
+  ['kompensation beckenrotation links','plusBe-L_komp'],
+  ['kompensation becken rotation nach links','plusBe-L_komp'],
+  ['kompensation becken rotation links','plusBe-L_komp'],
+  ['kompensation rotation becken nach links','plusBe-L_komp'],
+  ['kompensation rotation becken links','plusBe-L_komp'],
+  ['kompensation becken links','plusBe-L_komp'],
+  ['kompensation beckenrotation nach rechts','plusBe-R_komp'],
+  ['kompensation beckenrotation rechts','plusBe-R_komp'],
+  ['kompensation becken rotation nach rechts','plusBe-R_komp'],
+  ['kompensation becken rotation rechts','plusBe-R_komp'],
+  ['kompensation rotation becken nach rechts','plusBe-R_komp'],
+  ['kompensation rotation becken rechts','plusBe-R_komp'],
+  ['kompensation becken rechts','plusBe-R_komp'],
+  ['beckenrotation nach links','Becken-L'],
+  ['beckenrotation links','Becken-L'],
+  ['becken rotation nach links','Becken-L'],
+  ['becken rotation links','Becken-L'],
+  ['rotation becken nach links','Becken-L'],
+  ['beckenrotation nach rechts','Becken-R'],
+  ['beckenrotation rechts','Becken-R'],
+  ['becken rotation nach rechts','Becken-R'],
+  ['becken rotation rechts','Becken-R'],
+  ['rotation becken nach rechts','Becken-R'],
+  ['becken rotation rechts um','becken-rechts'],
+  ['becken rechts um','becken-rechts'],
+  ['markus blockierung becken','becken-rechts'],
+  // Kraftlinien
+  ['vordere kraftlinie rechts','VKL-R'],
+  ['vordere kraftlinie links','VKL-L'],
+  ['hintere kraftlinie rechts','HKL-R'],
+  ['hintere kraftlinie links','HKL-L'],
+  ['laterale kraftlinie links','lateral-L'],
+  ['laterale kraftlinie rechts','lateral-R'],
+  // Skoliose
+  ['thorakale skoliose links','Skoliose-thorakal-L'],
+  ['thorakales skoliose links','Skoliose-thorakal-L'],
+  ['skoliose thorakal links','Skoliose-thorakal-L'],
+  ['skoliose thoraka links','Skoliose-thorakal-L'],
+  ['skoliose turakal links','Skoliose-thorakal-L'],
+  ['skoliose turakal linke','Skoliose-thorakal-L'],
+  ['skoliose thorakale links','Skoliose-thorakal-L'],
+  ['skoliose im thorakalen bereich links','Skoliose-thorakal-L'],
+  ['thorakale skoliose rechts','Skoliose-thorakal-R'],
+  ['thorakales skoliose rechts','Skoliose-thorakal-R'],
+  ['skoliose thorakal rechts','Skoliose-thorakal-R'],
+  ['skoliose thoraka rechts','Skoliose-thorakal-R'],
+  ['skoliose turakal rechts','Skoliose-thorakal-R'],
+  ['skoliose turakal rechte','Skoliose-thorakal-R'],
+  ['skoliose thorakale rechts','Skoliose-thorakal-R'],
+  ['skoliose im thorakalen bereich rechts','Skoliose-thorakal-R'],
+  ['lumbale skoliose links','Skoliose-lumbal-L'],
+  ['lumbales skoliose links','Skoliose-lumbal-L'],
+  ['lumbale skoliose linke','Skoliose-lumbal-L'],
+  ['skoliose lumbal links','Skoliose-lumbal-L'],
+  ['lumbale skoliose rechts','Skoliose-lumbal-R'],
+  ['lumbales skoliose rechts','Skoliose-lumbal-R'],
+  ['lumbale skoliose rechte','Skoliose-lumbal-R'],
+  ['skoliose lumbal rechts','Skoliose-lumbal-R'],
+
+  // Tailliendreieck
+  ['taillendreieck links größer','taillen-L'],
+  ['taillen dreieck links größer','taillen-L'],
+  ['teilen dreieck links größer','taillen-L'],
+  ['teilchendreieck links','taillen-L'],
+  ['teilchen dreieck links','taillen-L'],
+  ['taillendreieck links','taillen-L'],
+  ['taillen dreieck links','taillen-L'],
+  ['teilen dreieck links','taillen-L'],
+  ['teilen dreiecke links','taillen-L'],
+  ['tailliendreieck links','taillen-L'],
+  ['taillien dreieck links','taillen-L'],
+  ['taillendreieck rechts größer','taillen-R'],
+  ['taillen dreieck rechts größer','taillen-R'],
+  ['teilen dreieck rechts größer','taillen-R'],
+  ['teilchendreieck rechts','taillen-R'],
+  ['teilchen dreieck rechts','taillen-R'],
+  ['taillendreieck rechts','taillen-R'],
+  ['taillen dreieck rechts','taillen-R'],
+  ['teilen dreieck rechts','taillen-R'],
+  ['teilen dreiecke rechts','taillen-R'],
+  ['tailliendreieck rechts','taillen-R'],
+  ['taillien dreieck rechts','taillen-R'],
+  // WS Seitneigung
+  ['wirbelsäulenseitneigung nach links eingeschränkt','WS-Seitneigung-L'],
+  ['wirbelsäulenseitneigung nach links','WS-Seitneigung-L'],
+  ['wirbelsäulenzeitneigung nach links','WS-Seitneigung-L'],
+  ['zeitneigung wirbelsäule nach links','WS-Seitneigung-L'],
+  ['seitneigung der wirbelsäule nach links eingeschränkt','WS-Seitneigung-L'],
+  ['seitneigung wirbelsäule nach links eingeschränkt','WS-Seitneigung-L'],
+  ['seitneigung wirbelsäule nach links','WS-Seitneigung-L'],
+  ['zeitneigung wirbelsäule nach links eingeschränkt','WS-Seitneigung-L'],
+  ['seitneigung ws nach links','WS-Seitneigung-L'],
+  ['seit neigung wirbelsäule nach links','WS-Seitneigung-L'],
+  ['seit neigung wirbelsäule nach links eingeschränkt','WS-Seitneigung-L'],
+  ['seitneigungseinschränkung wirbelsäule nach links','WS-Seitneigung-L'],
+  ['seitneigungseinschränkung der wirbelsäule nach links','WS-Seitneigung-L'],
+  ['wirbelsäulenseitneigung nach rechts eingeschränkt','WS-Seitneigung-R'],
+  ['wirbelsäulenseitneigung nach rechts','WS-Seitneigung-R'],
+  ['wirbelsäulenzeitneigung nach rechts','WS-Seitneigung-R'],
+  ['zeitneigung wirbelsäule nach rechts','WS-Seitneigung-R'],
+  ['seitneigung der wirbelsäule nach rechts eingeschränkt','WS-Seitneigung-R'],
+  ['seitneigung wirbelsäule nach rechts eingeschränkt','WS-Seitneigung-R'],
+  ['seitneigung wirbelsäule nach rechts','WS-Seitneigung-R'],
+  ['zeitneigung wirbelsäule nach rechts eingeschränkt','WS-Seitneigung-R'],
+  ['seitneigung ws nach rechts','WS-Seitneigung-R'],
+  ['seit neigung wirbelsäule nach rechts','WS-Seitneigung-R'],
+  ['seit neigung wirbelsäule nach rechts eingeschränkt','WS-Seitneigung-R'],
+  ['seitneigungseinschränkung wirbelsäule nach rechts','WS-Seitneigung-R'],
+  ['seitneigungseinschränkung der wirbelsäule nach rechts','WS-Seitneigung-R'],
+  // Beckenhochstand
+  ['beckenhochstand rechts','knie-slash'],
+  ['beckenhochstand links','knie-backslash'],
+  ['becken hochstand rechts','knie-slash'],
+  ['becken hochstand links','knie-backslash'],
+  // Knie
+  ['hyperextension linkes knie','knie-L'],
+  ['hyperextension linke knie','knie-L'],
+  ['hyperextension knie links','knie-L'],
+  ['extension knie links','knie-L'],
+  ['extension linkes knie','knie-L'],
+  ['extension linke knie','knie-L'],
+  ['knieextension links','knie-L'],
+  ['knie extension links','knie-L'],
+  ['hyperextension rechtes knie','knie-R'],
+  ['hyperextension rechte knie','knie-R'],
+  ['hyperextension knie rechts','knie-R'],
+  ['extension knie rechts','knie-R'],
+  ['extension rechtes knie','knie-R'],
+  ['extension rechte knie','knie-R'],
+  ['knieextension rechts','knie-R'],
+  ['knie extension rechts','knie-R'],
+  ['flexion linkes knie','flexion-knie-L'],
+  ['knieflexion links','flexion-knie-L'],
+  ['knie flexion links','flexion-knie-L'],
+  ['flexion knie links','flexion-knie-L'],
+  ['flexion rechtes knie','flexion-knie-R'],
+  ['knieflexion rechts','flexion-knie-R'],
+  ['knie flexion rechts','flexion-knie-R'],
+  ['flexion knie rechts','flexion-knie-R'],
+  // Fuß
+  ['knickfuß links','knickfuss-L'],
+  ['knick fuß links','knickfuss-L'],
+  ['knickfuss links','knickfuss-L'],
+  ['knickfuß rechts','knickfuss-R'],
+  ['knick fuß rechts','knickfuss-R'],
+  ['knickfuss rechts','knickfuss-R'],
+  // Bein
+  ['o-bein links','o-bein-L'],['o bein links','o-bein-L'],['oh bein links','o-bein-L'],['oben links','o-bein-L'],
+  ['o-bein rechts','o-bein-R'],['o bein rechts','o-bein-R'],['oh bein rechts','o-bein-R'],['oben rechts','o-bein-R'],
+  ['x-bein links','x-bein-L'],['x bein links','x-bein-L'],
+  ['x-bein rechts','x-bein-R'],['x bein rechts','x-bein-R'],
+  // Wendepunkt
+  ['wendepunkt schultergürtel','wendepunkt-SG'],
+  ['schultergürtel am wendepunkt','wendepunkt-SG'],
+  ['schultergürtel wendepunkt','wendepunkt-SG'],
+  ['wendepunkt thorax','wendepunkt-Th'],
+  ['thorax am wendepunkt','wendepunkt-Th'],
+  ['thorax wendepunkt','wendepunkt-Th'],
+  ['wendepunkt becken','wendepunkt-Be'],
+  ['wendepunkt decken','wendepunkt-Be'],
+  ['becken am wendepunkt','wendepunkt-Be'],
+  ['decken am wendepunkt','wendepunkt-Be'],
+  ['becken wendepunkt','wendepunkt-Be'],
+  // Beckenshift
+  ['beckenshift nach links','beckenshift-L'],
+  ['beckenshift links','beckenshift-L'],
+  ['beckenschiff nach links','beckenshift-L'],
+  ['beckenschiff links','beckenshift-L'],
+  ['becken shift nach links','beckenshift-L'],
+  ['becken shift links','beckenshift-L'],
+  ['becken verschoben nach links','beckenshift-L'],
+  ['beckenstift nach links','beckenshift-L'],
+  ['beckenstift links','beckenshift-L'],
+  ['beckenschutz nach links','beckenshift-L'],
+  ['beckenschutz links','beckenshift-L'],
+  ['beckenshift nach rechts','beckenshift-R'],
+  ['beckenshift rechts','beckenshift-R'],
+  ['beckenschiff nach rechts','beckenshift-R'],
+  ['beckenschiff rechts','beckenshift-R'],
+  ['becken shift nach rechts','beckenshift-R'],
+  ['becken shift rechts','beckenshift-R'],
+  ['becken verschoben nach rechts','beckenshift-R'],
+  ['beckenstift nach rechts','beckenshift-R'],
+  ['beckenstift rechts','beckenshift-R'],
+  ['beckenschutz nach rechts','beckenshift-R'],
+  ['beckenschutz rechts','beckenshift-R'],
+  // FFA
+  ['finger fußboden abstand','FFA'],['ffa','FFA'],
+];
+
+const tabMap=[
+  ['ich beginne im stand','Stand'],
+  ['untersuchung im stand','Stand'],
+  ['ich beginne im sitz','Sitz'],
+  ['untersuchung im sitz','Sitz'],
+  ['rückenlage','Rück'],
+  ['untersuchung in rückenlage','Rück'],
+  ['ich beginne in rückenlage','Rück'],
+  ['untersuchung rippe','Rippe'],
+  ['rippenuntersuchung','Rippe'],
+  ['zusatz','Zusatz'],
+  ['schädel','Schädel'],
+];
+
+// Tab-Wechsel Direktbefehle (nur exakt)
+const tabDirekt={
+  'stand':'Stand',
+  'sitz':'Sitz',
+  'rückenlage':'Rück',
+  'rücken':'Rück',
+  'rippe':'Rippe',
+  'rippen':'Rippe',
+};
+
+// Globale cycle-Funktion als Fallback für alle Symbole
+function symbolCycle(id){
+  // Alle SVG-Elemente nach data-id durchsuchen
+  const el=svg.querySelector('[data-symid="'+id+'"]');
+  if(el){el.dispatchEvent(new MouseEvent('click'));return true;}
+  return false;
+}
+
+function handleSpeech(transcript){
+  const t=transcript.toLowerCase().trim();
+  document.getElementById('speechLog').textContent='Gehört: „'+transcript+'"';
+
+  // Tab-Wechsel — Direktbefehle (exakter Match)
+  if(tabDirekt[t]){
+    const tab=tabDirekt[t];
+    document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active',btn.textContent===tab));
+    document.getElementById('sb').textContent='Wechsel zu: '+tab;
+    tonErfolgreich();
+    return;
+  }
+  // Tab-Wechsel — längere Phrasen
+  for(const [phrase,tab] of tabMap){
+    if(t.includes(phrase)){
+      document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active',btn.textContent===tab));
+      document.getElementById('sb').textContent='Wechsel zu: '+tab;
+      tonErfolgreich();
+      return;
+    }
+  }
+
+  // FFA mit Wert z.B. 'FFA 30'
+  const ffaMatch=t.match(/(?:ffa|finger.{0,20}abstand)\s+(\d+)/);
+  if(ffaMatch){
+    const wert=ffaMatch[1];
+    sm['FFA']='restricted';
+    const ffaLabel=svg.querySelector('[data-ffa="label"]');
+    const ffaWertEl=svg.querySelector('[data-ffa="wert"]');
+    if(ffaLabel) ffaLabel.setAttribute('fill','#cc0000');
+    if(ffaWertEl){ffaWertEl.textContent=wert+' cm';ffaWertEl.setAttribute('fill','#cc0000');}
+    showSb('FFA: '+wert+' cm','restricted');
+    tonErfolgreich();
+    return;
+  }
+
+  // Sprachbegriffe — längere zuerst (sortiert)
+  const sortedMap=[...speechMap].sort((a,b)=>b[0].length-a[0].length);
+  for(const [phrase,id] of sortedMap){
+    if(t.includes(phrase)) console.log('Match:', phrase, '->', id, '| reg:', !!reg[id]);
+
+    if(t.includes(phrase)){
+      // Direkt cycle aufrufen wenn in reg vorhanden
+      if(reg[id]){reg[id].cycle();tonErfolgreich();return;}
+      // Debug: ID nicht in reg gefunden
+      console.warn('ID nicht in reg:', id, '| Verfügbare IDs:', Object.keys(reg).join(', '));
+    }
+  }
+
+  document.getElementById('speechLog').textContent='Nicht erkannt: „'+transcript+'" — bitte Symbol antippen';
+  tonNichtErkannt();
+}
+
+// ─── SPRACHERKENNUNG ──────────────────────────────────────────────────────────
+let micRunning=false;
+
+function setMicUI(state,text){
+  document.getElementById('micDot').classList.toggle('active',state==='active');
+  document.getElementById('micStatus').classList.toggle('listening',state==='active');
+  document.getElementById('micText').textContent=text;
+  document.getElementById('micStartBtn').style.display=state==='stopped'?'inline-block':'none';
+}
+
+function startRecognition(){
+  if(micRunning)return;
+  // AudioContext beim Mikrofon-Start aktivieren
+  if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  if(audioCtx&&audioCtx.state==='suspended'){audioCtx.resume();}
+  if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window)){
+    setMicUI('stopped','Spracherkennung nicht verfügbar');return;
+  }
+  micRunning=true;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const recognition=new SR();
+  recognition.lang='de-DE';recognition.continuous=true;recognition.interimResults=false;
+  recognition.onstart=()=>{
+    setMicUI('active','Mikrofon aktiv — hört zu…');
+    // Audio automatisch beim Mikrofon-Start aktivieren
+    if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+    if(audioCtx&&audioCtx.state==='suspended'){audioCtx.resume();}
+    document.getElementById('audioBtn').textContent='🔔 Ton aktiv';
+    document.getElementById('audioBtn').style.background='#f0fff0';
+    document.getElementById('audioBtn').style.color='#336600';
+  };
+  recognition.onresult=(e)=>handleSpeech(e.results[e.results.length-1][0].transcript);
+  recognition.onerror=(e)=>{
+    micRunning=false;
+    if(e.error==='not-allowed'){setMicUI('stopped','Mikrofon-Zugriff verweigert');return;}
+    if(e.error==='network'){setMicUI('stopped','Netzwerkfehler — bitte Mikrofon-Button drücken');return;}
+    setMicUI('stopped','Kurze Pause… ('+e.error+')');
+    setTimeout(startRecognition,5000);
+  };
+  recognition.onend=()=>{micRunning=false;setTimeout(startRecognition,3000);setMicUI('stopped','Mikrofon kurz unterbrochen…')};
+  try{recognition.start();}catch(e){micRunning=false;setMicUI('stopped','Fehler — bitte Button drücken');}
+}
+window.addEventListener('load',()=>setTimeout(startRecognition,1500));
+
+// ─── RESET ────────────────────────────────────────────────────────────────────
+function resetAll(){
+  Object.keys(sm).forEach(k=>sm[k]='neutral');
+  svg.querySelectorAll('line').forEach(l=>{if(l.getAttribute('stroke')==='transparent')return;if(l.getAttribute('stroke-dasharray'))l.setAttribute('stroke',COL_DASH);else l.setAttribute('stroke',COL);});
+  svg.querySelectorAll('path').forEach(p=>{if(p.getAttribute('stroke-dasharray'))p.setAttribute('stroke',COL_DASH);else p.setAttribute('stroke',COL);});
+  svg.querySelectorAll('polygon').forEach(p=>{if(p.getAttribute('fill')==='none')p.setAttribute('stroke',COL);else if(p.getAttribute('fill')==='transparent')return;else p.setAttribute('fill',COL);});
+  svg.querySelectorAll('circle').forEach(c=>{c.setAttribute('fill',COL_BG);c.setAttribute('stroke',COL);});
+  svg.querySelectorAll('text').forEach(t=>{if(t.getAttribute('pointer-events')==='none')return;t.setAttribute('fill',COL);});
+  document.getElementById('sb').textContent='Alle zurückgesetzt';
+}
+
+// ─── EXPORT ───────────────────────────────────────────────────────────────────
+function exportBefund(){
+  const aktiv=Object.entries(sm).filter(([k,v])=>v!=='neutral').map(([k,v])=>{
+    const r=reg[k];return r?`${r.label}: ${LABELS[v]}`:null;
+  }).filter(Boolean);
+  const text=aktiv.length>0?'Befund Stand:\n'+aktiv.join('\n'):'Keine Befunde dokumentiert';
+  try{
+    const svgEl=document.getElementById('sv');
+    const svgData=new XMLSerializer().serializeToString(svgEl);
+    const canvas=document.createElement('canvas');canvas.width=400;canvas.height=750;
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,400,750);
+    const img=new Image();
+    const blob=new Blob([svgData],{type:'image/svg+xml'});
+    const url=URL.createObjectURL(blob);
+    img.onload=()=>{
+      ctx.drawImage(img,40,20,320,710);
+      const a=document.createElement('a');
+      a.download='Befund_Stand_'+new Date().toISOString().slice(0,10)+'.png';
+      a.href=canvas.toDataURL('image/png');a.click();URL.revokeObjectURL(url);
+    };
+    img.src=url;
+  }catch(e){
+    const blob=new Blob([text],{type:'text/plain'});
+    const a=document.createElement('a');
+    a.download='Befund_Stand_'+new Date().toISOString().slice(0,10)+'.txt';
+    a.href=URL.createObjectURL(blob);a.click();
+  }
+}
+</script>
+</body>
+</html>
