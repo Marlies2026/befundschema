@@ -210,24 +210,24 @@ function hlineDir(idL,idR,y,labelL,labelR,plusIdL,plusIdR,plusLabelL,plusLabelR,
   const hL=hit(LX-s-4,y-s-4,s*2+8,s*2+8);hL.style.cursor='pointer';
   const hR=hit(RX-s-4,y-s-4,s*2+8,s*2+8);hR.style.cursor='pointer';
 
-  const cycL=(withPlus)=>{
-    const next=physioSide==='L'?csPhysio(idL):cs(idL);sm[idL]=next;sm[idR]='neutral';
+  const cycL=(withPlus,physio=false)=>{
+    const next=physio&&physioSide==='L'?csPhysio(idL):cs(idL);sm[idL]=next;sm[idR]='neutral';
     triR.setAttribute('stroke',COL);linie.setAttribute('stroke',SCOL[next]);triL.setAttribute('stroke',SCOL[next]);
     if(withPlus&&plusIdL&&reg[plusIdL]){sm[plusIdL]=next;const pt=svg.querySelector(`[data-plus="${plusIdL}"]`);if(pt)pt.setAttribute('fill',FCOL[next]);}
     showSb(withPlus?(plusLabelL||labelL):labelL,next);
   };
-  const cycR=(withPlus)=>{
-    const next=physioSide==='R'?csPhysio(idR):cs(idR);sm[idR]=next;sm[idL]='neutral';
+  const cycR=(withPlus,physio=false)=>{
+    const next=physio&&physioSide==='R'?csPhysio(idR):cs(idR);sm[idR]=next;sm[idL]='neutral';
     triL.setAttribute('stroke',COL);linie.setAttribute('stroke',SCOL[next]);triR.setAttribute('stroke',SCOL[next]);
     if(withPlus&&plusIdR&&reg[plusIdR]){sm[plusIdR]=next;const pt=svg.querySelector(`[data-plus="${plusIdR}"]`);if(pt)pt.setAttribute('fill',FCOL[next]);}
     showSb(withPlus?(plusLabelR||labelR):labelR,next);
   };
 
-  reg2(idL,()=>cycL(false),labelL);reg2(idR,()=>cycR(false),labelR);
-  if(plusIdL) reg2(plusIdL+'_komp',()=>cycL(true),plusLabelL||labelL);
-  if(plusIdR) reg2(plusIdR+'_komp',()=>cycR(true),plusLabelR||labelR);
-  hL.addEventListener('click',()=>cycL(false));
-  hR.addEventListener('click',()=>cycR(false));
+  reg2(idL,()=>cycL(false,true),labelL);reg2(idR,()=>cycR(false,true),labelR);
+  if(plusIdL) reg2(plusIdL+'_komp',()=>cycL(true,false),plusLabelL||labelL);
+  if(plusIdR) reg2(plusIdR+'_komp',()=>cycR(true,false),plusLabelR||labelR);
+  hL.addEventListener('click',()=>cycL(false,false));
+  hR.addEventListener('click',()=>cycR(false,false));
   // Wendepunkt: beide Dreiecke + Linie einfärben
   lineFns[idL]=(next)=>{
     sm[idL]=next;sm[idR]=next;
