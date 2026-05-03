@@ -45,7 +45,7 @@ button { padding: 8px 16px; border-radius: 6px; border: 1px solid #ccc; font-siz
 </div>
 <div class="legend">
   <span><span class="dot" style="background:#cc0000"></span>eingeschränkt</span>
-  <span><span class="dot" style="background:#336600"></span>physiologisch</span>
+  <span><span class="dot" style="background:#00cc44"></span>physiologisch</span>
 </div>
 <div id="schema-container">
   <svg id="sv" viewBox="-45 -70 390 530" style="display:block;width:100%;max-width:360px;"></svg>
@@ -100,8 +100,8 @@ const PL=32,PR=268;
 const COL='#222222',COL_DASH='#aaaaaa',COL_BG='#ffffff';
 const STATES=['neutral','restricted','free'];
 const LABELS={neutral:'neutral',restricted:'eingeschränkt',free:'frei (physiologisch)'};
-const SCOL={neutral:COL,restricted:'#cc0000',improved:'#cc8800',free:'#336600'};
-const FCOL={neutral:COL,restricted:'#cc0000',improved:'#cc8800',free:'#336600'};
+const SCOL={neutral:COL,restricted:'#cc0000',improved:'#cc8800',free:'#00cc44'};
+const FCOL={neutral:COL,restricted:'#cc0000',improved:'#cc8800',free:'#00cc44'};
 const DCOL={neutral:COL_DASH,restricted:'#cc0000',improved:'#cc8800',free:'#336600'};
 const TCOL={neutral:COL,restricted:'#cc0000',improved:'#cc8800',free:'#336600'};
 
@@ -696,6 +696,7 @@ const speechMap=[
   ['thoraxrotation nach rechts','Thorax-R'],
   ['thorax rotation nach rechts','Thorax-R'],
   ['rotation thorax nach rechts','Thorax-R'],
+  ['thorax rotation links um','thorax-links'],
   ['thorax links um','thorax-links'],
   ['vagus blockiert','thorax-links'],
   ['vagus blockade','thorax-links'],
@@ -733,8 +734,8 @@ const speechMap=[
   ['becken rotation nach rechts','Becken-R'],
   ['becken rotation rechts','Becken-R'],
   ['rotation becken nach rechts','Becken-R'],
+  ['becken rotation rechts um','becken-rechts'],
   ['becken rechts um','becken-rechts'],
-  ['becken rechts','becken-rechts'],
   ['markus blockierung becken','becken-rechts'],
   // Kraftlinien
   ['vordere kraftlinie rechts','VKL-R'],
