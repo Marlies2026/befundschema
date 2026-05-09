@@ -909,9 +909,10 @@ makePaar('O-L','O-R',CX,Y3-8,'O',
    // Block-Mitte = fx, links davon Pfeil, rechts davon Buchstaben (oder umgekehrt)
    // Buchstaben horizontal angeordnet, Pfeil davor (links)
 
-   // Pfeil weiter lateral, Buchstaben Richtung Mitte
+   // Pfeil lateral außen, Buchstaben Richtung Mitte
    const arrX=cubX-dirIn*8;
-   const lettersStartX=arrX+dirIn*20;
+   // Bei R mehr Abstand zum Pfeil
+   const lettersStartX=side==='L'?arrX+dirIn*20:arrX+dirIn*90;
 
    // === Zeile 1: Pfeil nach unten + Buchstaben cranial ===
    const y1=chDetailY;
