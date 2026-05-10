@@ -1062,6 +1062,58 @@ makePaar('O-L','O-R',CX,Y3-8,'O',
  });
 }
 
+// Sternum — 8-Form zwischen Y1 und Y2 mit 6 Pfeilen
+{const SY=Y1+14,EY=Y2-10;
+ const sCenter=(SY+EY)/2; // Mitte = Übergang Manubrium/Korpus
+ const manuRX=13, manuRY=10; // Manubrium (kleiner)
+ const korpRX=15, korpRY=14; // Korpus (etwas größer)
+ const manuCY=SY+manuRY;
+ const korpCY=manuCY+manuRY+korpRY; // direkt unter Manubrium, sich berührend
+
+ // Manubrium — Achteck (Viereck mit abgeschnittenen Ecken)
+ {const cx=CX,cy=manuCY,w=manuRX,h=manuRY,c=4; // c = Abschrägung
+  const pts=`${cx-w+c},${cy-h} ${cx+w-c},${cy-h} ${cx+w},${cy-h+c} ${cx+w},${cy+h-c} ${cx+w-c},${cy+h} ${cx-w+c},${cy+h} ${cx-w},${cy+h-c} ${cx-w},${cy-h+c}`;
+  el('polygon',{points:pts,fill:COL_BG,stroke:COL,'stroke-width':SW});}
+ // Korpus — Achteck (etwas länger und breiter)
+ {const cx=CX,cy=korpCY,w=korpRX,h=korpRY,c=5;
+  const pts=`${cx-w+c},${cy-h} ${cx+w-c},${cy-h} ${cx+w},${cy-h+c} ${cx+w},${cy+h-c} ${cx+w-c},${cy+h} ${cx-w+c},${cy+h} ${cx-w},${cy+h-c} ${cx-w},${cy-h+c}`;
+  el('polygon',{points:pts,fill:COL_BG,stroke:COL,'stroke-width':SW});}
+
+ // Pfeile: 2 seitlich (groß), 2 oben in Manubrium, 2 unten in Korpus
+ const aL=12,ts=5;
+ ['L','R'].forEach(side=>{
+   const dir=side==='L'?-1:1;
+
+   // 1) Sternum seitlich groß (parallel zum Sternum, vertikal nach oben)
+   {const sx=CX+dir*(Math.max(manuRX,korpRX)+5);
+    const sy=korpCY+korpRY-2, ey=manuCY-manuRY+2;
+    const shaft=mkl(sx,sy,sx,ey+3);
+    const tip=el('polygon',{points:`${sx},${ey} ${sx-ts*0.6},${ey+4} ${sx+ts*0.6},${ey+4}`,fill:COL});
+    sm[`Sternum-${side}`]='neutral';
+    const h=hit(sx-6,ey-2,12,sy-ey+4);h.style.cursor='pointer';
+    const fn=()=>{const next=cs(`Sternum-${side}`);sm[`Sternum-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb(`Sternum Hochstand ${side}`,next);tonErfolgreich();};
+    reg2(`Sternum-${side}`,fn,`Sternum Hochstand ${side}`);h.addEventListener('click',fn);}
+
+   // 2) Manubrium Pfeil nach oben (parallel zum Sternum, innerhalb)
+   {const mx=CX+dir*5, sy=manuCY+manuRY-3, ey=manuCY-manuRY+5;
+    const shaft=mkl(mx,sy,mx,ey+3);
+    const tip=el('polygon',{points:`${mx},${ey} ${mx-ts*0.5},${ey+3} ${mx+ts*0.5},${ey+3}`,fill:COL});
+    const h=hit(mx-5,ey-2,10,sy-ey+4);h.style.cursor='pointer';
+    sm[`Manubrium-${side}`]='neutral';
+    const fn=()=>{const next=cs(`Manubrium-${side}`);sm[`Manubrium-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb(`Manubrium Hochstand ${side}`,next);tonErfolgreich();};
+    reg2(`Manubrium-${side}`,fn,`Manubrium Hochstand ${side}`);h.addEventListener('click',fn);}
+
+   // 3) Korpus Pfeil nach unten (innerhalb Korpus)
+   {const kx=CX+dir*5, sy=korpCY-korpRY+3, ey=korpCY+korpRY-5;
+    const shaft=mkl(kx,sy,kx,ey-3);
+    const tip=el('polygon',{points:`${kx},${ey} ${kx-ts*0.5},${ey-3} ${kx+ts*0.5},${ey-3}`,fill:COL});
+    const h=hit(kx-5,sy-2,10,ey-sy+4);h.style.cursor='pointer';
+    sm[`Korpus-${side}`]='neutral';
+    const fn=()=>{const next=cs(`Korpus-${side}`);sm[`Korpus-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb(`Korpus Tiefstand ${side}`,next);tonErfolgreich();};
+    reg2(`Korpus-${side}`,fn,`Korpus Tiefstand ${side}`);h.addEventListener('click',fn);}
+ });
+}
+
 // ─── SPRACHBEGRIFFE ──────────────────────────────────────────────────────────
 const speechMap=[
   // Tab-Wechsel
@@ -1314,6 +1366,18 @@ const speechMap=[
   ['außenrotation kurz linke hüfte eingeschränkt','HuefARK-L'],['außenrotation linke hüfte kurz eingeschränkt','HuefARK-L'],
   ['hüfte links kurz in außenrotation eingeschränkt','HuefARK-L'],['kurze außenrotation links eingeschränkt','HuefARK-L'],
   ['außenrotation kurz links','HuefARK-L'],['ar kurz links','HuefARK-L'],
+
+  // Sternum
+  ['sternum hochstand rechts','Sternum-R'],['sternum steht rechts cranial','Sternum-R'],['sternum rechts cranial','Sternum-R'],
+  ['sternum hochstand links','Sternum-L'],['sternum steht links cranial','Sternum-L'],['sternum links cranial','Sternum-L'],
+
+  // Manubrium
+  ['manubrium rechts hochstand','Manubrium-R'],['rechtes manubrium steht cranial','Manubrium-R'],['rechtes manubrium cranial','Manubrium-R'],
+  ['manubrium links hochstand','Manubrium-L'],['linkes manubrium steht cranial','Manubrium-L'],['linkes manubrium cranial','Manubrium-L'],
+
+  // Korpus Sternum
+  ['korpus tiefstand rechts','Korpus-R'],['rechter korpus vom sternum steht tief','Korpus-R'],['korpus sternum rechts caudal','Korpus-R'],
+  ['korpus tiefstand links','Korpus-L'],['linker korpus vom sternum steht tief','Korpus-L'],['korpus sternum links caudal','Korpus-L'],
 
   // Schulterblatt — Rachen/Kehle (oberster Pfeil)
   ['kehle rechts','Scap-Rachen-R'],['rachen rechts','Scap-Rachen-R'],['rachen','Scap-Rachen-R'],
