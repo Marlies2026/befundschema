@@ -1,0 +1,3039 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Befundschema – Rückenlage</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f0f0; color: #111; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 6px; }
+h1 { font-size: 13px; letter-spacing: 3px; text-transform: uppercase; color: #666; margin-bottom: 5px; }
+.tabs { display: flex; gap: 4px; margin-bottom: 5px; flex-wrap: wrap; justify-content: center; }
+.tab { font-size: 10px; padding: 4px 10px; border: 1px solid #bbb; border-radius: 4px; background: #fff; color: #666; cursor: pointer; letter-spacing: 1px; }
+.tab.active { background: #222; color: #fff; border-color: #222; }
+.legend { display: flex; gap: 10px; align-items: center; font-size: 10px; color: #666; margin-bottom: 5px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 3px; }
+#schema-container { background: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 4px; margin-bottom: 5px; }
+.status-bar { width: 100%; max-width: 500px; background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 5px 10px; font-size: 11px; color: #666; min-height: 26px; margin-bottom: 4px; }
+.mic-status { width: 100%; max-width: 500px; background: #fff; border: 2px solid #ccc; border-radius: 6px; padding: 4px 10px; font-size: 11px; color: #666; min-height: 24px; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+.mic-status.listening { border-color: #cc0000; background: #fff5f5; }
+.mic-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
+.mic-dot.active { background: #cc0000; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.speech-log { width: 100%; max-width: 500px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 3px 8px; font-size: 10px; color: #888; min-height: 20px; font-style: italic; margin-bottom: 3px; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 8px; }
+button { padding: 8px 16px; border-radius: 6px; border: 1px solid #ccc; font-size: 11px; cursor: pointer; letter-spacing: 1px; background: #fff; color: #333; }
+#audioBtn { background: #fff0e0; color: #996600; border-color: #cc8800; }
+#exportBtn { background: #f0fff0; color: #336600; border-color: #336600; }
+#resetBtn { background: #fff8f0; color: #996600; border-color: #cc8800; }
+.hint { font-size: 9px; color: #aaa; text-align: center; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<h1>Befundschema</h1>
+<div class="tabs">
+  <button class="tab" onclick="switchTab('Stand')">Stand</button>
+  <button class="tab" onclick="switchTab('Sitz')">Sitz</button>
+  <button class="tab" onclick="switchTab('Rippe')">Rippe</button>
+  <button class="tab active" onclick="switchTab('Rück')">Rück</button>
+  <button class="tab" onclick="switchTab('Zusatz')">Zusatz</button>
+  <button class="tab" onclick="switchTab('Schädel')">Schädel</button>
+</div>
+<div class="legend">
+  <span><span class="dot" style="background:#cc0000"></span>eingeschränkt</span>
+  <span><span class="dot" style="background:#00aa33"></span>physiologisch</span>
+</div>
+<div id="schema-container">
+  <svg id="sv" viewBox="-60 -120 430 700" style="display:block;width:100%;max-width:500px;background:#fff;"></svg>
+</div>
+<div class="status-bar" id="sb">Symbol antippen oder sprechen</div>
+<div class="mic-status" id="micStatus">
+  <span class="mic-dot" id="micDot"></span>
+  <span id="micText">Mikrofon wird gestartet…</span>
+</div>
+<div class="speech-log" id="speechLog">Warte auf Spracheingabe…</div>
+<p class="hint">1× = eingeschränkt/frei · Korrektur [Symbol] = zurücksetzen</p>
+<div class="controls">
+  <button id="audioBtn" onclick="aktiviereAudio()">🔔 Ton aktivieren</button>
+  <button id="exportBtn" onclick="exportBefund()">📸 Exportieren</button>
+  <button id="resetBtn" onclick="resetAll()">↺ Zurücksetzen</button>
+</div>
+
+<script>
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.textContent===name));
+  document.getElementById('sb').textContent='Tab: '+name;
+}
+
+const svg=document.getElementById('sv');
+const NS="http://www.w3.org/2000/svg";
+const SW=2,COL='#222',COL_DASH='#aaa',COL_BG='#fff';
+const CX=150,LX=50,RX=250;
+const GAP=40,LGAP=80;
+const CY_TOP=55;
+const Y1=CY_TOP+GAP;    // Schultergürtel
+const Y2=Y1+LGAP;       // Thorax
+const Y3=Y2+LGAP;       // Becken
+const SAC_T=50,COC_H=20;
+const SAC_Y_BASE=Y3+LGAP/2;
+const Y4=SAC_Y_BASE+SAC_T+6+COC_H; // Beckenboden = Coccyx-Spitze
+const CR=14;
+const SCOL={neutral:COL,restricted:'#cc0000',free:'#00aa33'};
+const FCOL={neutral:COL,restricted:'#cc0000',free:'#00aa33'};
+const sm={};
+const reg={};
+
+function el(tag,attrs){const e=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));svg.appendChild(e);return e;}
+function cs(id){return sm[id]==='neutral'?'restricted':'neutral';}
+function csPhysio(id){return sm[id]==='neutral'?'free':'neutral';}
+function reg2(id,fn,label){sm[id]='neutral';reg[id]={cycle:fn,label};}
+function mkl(x1,y1,x2,y2,extra={}){return el('line',{x1,y1,x2,y2,stroke:COL,'stroke-width':SW,'stroke-linecap':'round',...extra});}
+function hit(x,y,w,h){const r=el('rect',{x,y,width:w,height:h,fill:'transparent'});r.style.cursor='pointer';return r;}
+function stxt(x,y,s,sz=8,col='#666'){const t=el('text',{x,y,'text-anchor':'middle','dominant-baseline':'middle','font-size':sz,fill:col,'pointer-events':'none'});t.textContent=s;return t;}
+function showSb(label,state){
+  const sb=document.getElementById('sb');
+  const LABELS={neutral:'zurückgesetzt',restricted:'eingeschränkt',free:'physiologisch'};
+  sb.innerHTML=`<span style="font-weight:600">${label}</span> → <span style="color:${SCOL[state]}">${LABELS[state]}</span>`;
+}
+
+// Audio
+let audioCtx=null;
+function playTon(freq,dauer,typ='sine'){
+  try{
+    if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended') audioCtx.resume();
+    const osc=audioCtx.createOscillator();const gain=audioCtx.createGain();
+    osc.connect(gain);gain.connect(audioCtx.destination);
+    osc.type=typ;osc.frequency.setValueAtTime(freq,audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.3,audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dauer);
+    osc.start();osc.stop(audioCtx.currentTime+dauer);
+  }catch(e){}
+}
+function tonErfolgreich(){playTon(523,0.12);setTimeout(()=>playTon(784,0.12),130);setTimeout(()=>playTon(1047,0.15),260);}
+function aktiviereAudio(){
+  try{
+    if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    audioCtx.resume().then(()=>{
+      const osc=audioCtx.createOscillator();const gain=audioCtx.createGain();
+      osc.connect(gain);gain.connect(audioCtx.destination);
+      osc.frequency.value=880;gain.gain.setValueAtTime(0.3,audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.3);
+      osc.start();osc.stop(audioCtx.currentTime+0.3);
+      document.getElementById('audioBtn').textContent='🔔 Ton aktiv';
+      document.getElementById('audioBtn').style.background='#f0fff0';
+      document.getElementById('audioBtn').style.color='#336600';
+    });
+  }catch(e){}
+}
+
+// Hilfsfunktionen
+function hlineDir(idL,idR,y,labelL,labelR,physioSide){
+  const linie=mkl(LX,y,RX,y);
+  const s=8;
+  const ptsL=`${LX-s},${y} ${LX},${y-s*.6} ${LX},${y+s*.6}`;
+  const ptsR=`${RX+s},${y} ${RX},${y-s*.6} ${RX},${y+s*.6}`;
+  const triL=el('polygon',{points:ptsL,fill:'none',stroke:COL,'stroke-width':1.5});
+  const triR=el('polygon',{points:ptsR,fill:'none',stroke:COL,'stroke-width':1.5});
+  const hL=hit(LX-s-4,y-s-4,s*2+8,s*2+8);hL.style.cursor='pointer';
+  const hR=hit(RX-s-4,y-s-4,s*2+8,s*2+8);hR.style.cursor='pointer';
+  const cycL=()=>{
+    const next=physioSide==='L'?csPhysio(idL):cs(idL);sm[idL]=next;sm[idR]='neutral';
+    triR.setAttribute('stroke',COL);linie.setAttribute('stroke',SCOL[next]);triL.setAttribute('stroke',SCOL[next]);
+    showSb(labelL,next);tonErfolgreich();
+  };
+  const cycR=()=>{
+    const next=physioSide==='R'?csPhysio(idR):cs(idR);sm[idR]=next;sm[idL]='neutral';
+    triL.setAttribute('stroke',COL);linie.setAttribute('stroke',SCOL[next]);triR.setAttribute('stroke',SCOL[next]);
+    showSb(labelR,next);tonErfolgreich();
+  };
+  reg2(idL,cycL,labelL);reg2(idR,cycR,labelR);
+  hL.addEventListener('click',cycL);hR.addEventListener('click',cycR);
+}
+
+function plusMark(id,x,y,label){
+  const t=el('text',{x,y,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:COL});
+  t.style.cursor='pointer';t.textContent='+';svg.appendChild(t);
+  const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',SCOL[next]);showSb(label,next);tonErfolgreich();};
+  reg2(id,fn,label);t.addEventListener('click',fn);return t;
+}
+
+function makeWendepunkt(id,idL,idR,label){
+  sm[id]='neutral';
+  const fn=()=>{
+    const next=cs(id);sm[id]=next;
+    // Färbe beide Seiten
+    if(reg[idL]) reg[idL].cycle();
+    if(reg[idR]) reg[idR].cycle();
+    showSb(label,next);tonErfolgreich();
+  };
+  reg2(id,fn,label);
+}
+
+function makeBracketArrow(id,cx,cy,dir,label){
+  sm[id]='neutral';
+  const TS=5,PL2=8;
+  const tL=el('text',{x:cx-PL2-2,y:cy,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:COL,'pointer-events':'none'});tL.textContent='(';svg.appendChild(tL);
+  const tR=el('text',{x:cx+PL2+2,y:cy,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:COL,'pointer-events':'none'});tR.textContent=')';svg.appendChild(tR);
+  let shaft,tip;
+  if(dir==='left'){shaft=mkl(cx+PL2-2,cy,cx-PL2+TS,cy);tip=el('polygon',{points:`${cx-PL2},${cy} ${cx-PL2+TS},${cy-TS/2} ${cx-PL2+TS},${cy+TS/2}`,fill:COL});}
+  else{shaft=mkl(cx-PL2+2,cy,cx+PL2-TS,cy);tip=el('polygon',{points:`${cx+PL2},${cy} ${cx+PL2-TS},${cy-TS/2} ${cx+PL2-TS},${cy+TS/2}`,fill:COL});}
+  const h=el('rect',{x:cx-PL2-6,y:cy-8,width:PL2*2+12,height:16,fill:'transparent'});h.style.cursor='pointer';
+  const fn=()=>{const next=cs(id);sm[id]=next;const col=next==='neutral'?COL:SCOL[next];[tL,tR].forEach(t=>t.setAttribute('fill',col));shaft.setAttribute('stroke',col);tip.setAttribute('fill',col);showSb(label,next);tonErfolgreich();};
+  reg2(id,fn,label);h.addEventListener('click',fn);
+}
+
+// ─── SVG AUFBAU ──────────────────────────────────────────────────────────────
+
+stxt(20,12,'L',9);stxt(280,12,'R',9);
+
+// Mittellinie — endet an Sacrum Oberkante
+mkl(CX,CY_TOP,CX,Y3);
+
+// Querlinien RL — CTÜ Shift, Thoraxshift, Beckenshift
+// Shift nach rechts = rechte Seite (Dreieck+Plus+Linie), nach links = linke Seite
+function hlineShift(idL,idR,y,labelL,labelR){
+  const linie=mkl(LX,y,RX,y);
+  const s=8;
+  const ptsL=`${LX-s},${y} ${LX},${y-s*.6} ${LX},${y+s*.6}`;
+  const ptsR=`${RX+s},${y} ${RX},${y-s*.6} ${RX},${y+s*.6}`;
+  const triL=el('polygon',{points:ptsL,fill:'none',stroke:COL,'stroke-width':1.5});
+  const triR=el('polygon',{points:ptsR,fill:'none',stroke:COL,'stroke-width':1.5});
+  const hL=hit(LX-s-4,y-s-4,s*2+8,s*2+8);hL.style.cursor='pointer';
+  const hR=hit(RX-s-4,y-s-4,s*2+8,s*2+8);hR.style.cursor='pointer';
+  const cycL=()=>{const next=cs(idL);sm[idL]=next;sm[idR]='neutral';
+    triR.setAttribute('stroke',COL);
+    [linie,triL].forEach(e=>e.setAttribute('stroke',SCOL[next]));
+    if(plusEls[idL]) plusEls[idL].setAttribute('fill',next==='neutral'?COL:SCOL[next]);
+    if(plusEls[idR]) plusEls[idR].setAttribute('fill',COL);
+    showSb(labelL,next);tonErfolgreich();};
+  const cycR=()=>{const next=cs(idR);sm[idR]=next;sm[idL]='neutral';
+    triL.setAttribute('stroke',COL);
+    [linie,triR].forEach(e=>e.setAttribute('stroke',SCOL[next]));
+    if(plusEls[idR]) plusEls[idR].setAttribute('fill',next==='neutral'?COL:SCOL[next]);
+    if(plusEls[idL]) plusEls[idL].setAttribute('fill',COL);
+    showSb(labelR,next);tonErfolgreich();};
+  reg2(idL,cycL,labelL);reg2(idR,cycR,labelR);
+  hL.addEventListener('click',cycL);hR.addEventListener('click',cycR);
+}
+const plusEls={};
+function plusMarkShift(id,x,y,label){
+  const t=el('text',{x,y,'text-anchor':'middle','dominant-baseline':'middle','font-size':13,fill:COL});
+  t.style.cursor='pointer';t.textContent='+';svg.appendChild(t);
+  plusEls[id]=t;
+  const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',SCOL[next]);showSb(label,next);tonErfolgreich();};
+  reg2(id,fn,label);t.addEventListener('click',fn);return t;
+}
+
+hlineShift('CTÜ-L','CTÜ-R',Y1,'CTÜ Shift links','CTÜ Shift rechts');
+
+
+hlineShift('ThS-L','ThS-R',Y2,'Thoraxshift links','Thoraxshift rechts');
+
+
+hlineShift('BeS-L','BeS-R',Y3,'Beckenshift links','Beckenshift rechts');
+
+
+// Wendepunkte
+makeWendepunkt('wCTÜ','CTÜ-L','CTÜ-R','Wendepunkt CTÜ');
+makeWendepunkt('wThS','ThS-L','ThS-R','Wendepunkt Thoraxshift');
+makeWendepunkt('wBeS','BeS-L','BeS-R','Wendepunkt Beckenshift');
+
+
+
+// Sacrum (Trapez)
+{const sacX=CX,sacY=Y3;
+ const sacW=50,sacB=14;
+ const pts=`${sacX-sacB/2},${sacY+SAC_T} ${sacX+sacB/2},${sacY+SAC_T} ${sacX+sacW/2},${sacY} ${sacX-sacW/2},${sacY}`;
+ el('polygon',{points:pts,fill:'none',stroke:COL,'stroke-width':SW});
+
+
+ // S — Kurvatur Sacrum (links und rechts außen, unter Y3)
+ makePaar('S-L','S-R',sacX,sacY+12,'S',
+   'Kurvatur Sacrum links eingeschränkt',
+   'Kurvatur Sacrum rechts eingeschränkt',
+   'Kurvatur Sacrum beidseits eingeschränkt', 12);
+
+ // C — Kurvatur Coccyx, an Unterkante Sacrum
+ makePaar('CV-L','CV-R',sacX,sacY+SAC_T-6,'C',
+   'Kurvatur Coccyx links eingeschränkt',
+   'Kurvatur Coccyx rechts eingeschränkt',
+   'Kurvatur Coccyx beidseits eingeschränkt', 4);
+
+ // Coccyx Dreieck
+ const cocY=sacY+SAC_T+6;
+ const cocPts=`${sacX},${cocY+COC_H} ${sacX-sacB/2},${cocY} ${sacX+sacB/2},${cocY}`;
+ el('polygon',{points:cocPts,fill:'none',stroke:COL,'stroke-width':SW});
+
+
+}
+
+
+
+
+// ─── Kurvatursymbole nahe Mittellinie ────────────────────────────────────────
+function makePaar(idL,idR,x,y,buchstabe,labelL,labelR,labelB,offset=12){
+  // Links
+  const tL=el('text',{x:''+(CX-offset),y:''+y,'text-anchor':'middle','dominant-baseline':'middle','font-size':8,fill:COL});
+  tL.setAttribute('font-size',10);tL.textContent=buchstabe;tL.style.cursor='pointer';svg.appendChild(tL);
+  sm[idL]='neutral';
+  const fnL=()=>{const next=cs(idL);sm[idL]=next;tL.setAttribute('fill',SCOL[next]);showSb(labelL,next);tonErfolgreich();};
+  reg2(idL,fnL,labelL);tL.addEventListener('click',fnL);
+
+  // Rechts
+  const tR=el('text',{x:''+(CX+offset),y:''+y,'text-anchor':'middle','dominant-baseline':'middle','font-size':8,fill:COL});
+  tR.setAttribute('font-size',10);tR.textContent=buchstabe;tR.style.cursor='pointer';svg.appendChild(tR);
+  sm[idR]='neutral';
+  const fnR=()=>{const next=cs(idR);sm[idR]=next;tR.setAttribute('fill',SCOL[next]);showSb(labelR,next);tonErfolgreich();};
+  reg2(idR,fnR,labelR);tR.addEventListener('click',fnR);
+
+  // Beidseits
+  const idB=idL.replace('-L','-B');
+  sm[idB]='neutral';
+  const fnB=()=>{
+    const next=cs(idB);sm[idB]=next;
+    sm[idL]=next;sm[idR]=next;
+    tL.setAttribute('fill',SCOL[next]);tR.setAttribute('fill',SCOL[next]);
+    showSb(labelB,next);tonErfolgreich();
+  };
+  reg2(idB,fnB,labelB);
+}
+
+// E — Kurvatur HWS cranial (oberhalb C4)
+makePaar('E-L','E-R',CX,CY_TOP,'E',
+  'Kurvatur HWS cranial links eingeschränkt',
+  'Kurvatur HWS cranial rechts eingeschränkt',
+  'Kurvatur HWS cranial beidseits eingeschränkt');
+
+// C4 — Wirbel C4
+makePaar('C4-L','C4-R',CX,CY_TOP+14,'C4',
+  'C4 links eingeschränkt','C4 rechts eingeschränkt','C4 beidseits eingeschränkt',20);
+
+// D — Kurvatur HWS caudal (unterhalb C4)
+makePaar('D-L','D-R',CX,Y1-8,'D',
+  'Kurvatur HWS caudal links eingeschränkt',
+  'Kurvatur HWS caudal rechts eingeschränkt',
+  'Kurvatur HWS caudal beidseits eingeschränkt');
+
+// C — obere BWS Kurvatur (unter Y1)
+makePaar('C-L','C-R',CX,Y1+8,'C',
+  'Kurvatur BWS oben links eingeschränkt',
+  'Kurvatur BWS oben rechts eingeschränkt',
+  'Kurvatur BWS oben beidseits eingeschränkt');
+
+// B — untere BWS Kurvatur (über Y2)
+makePaar('B-L','B-R',CX,Y2-8,'B',
+  'Kurvatur BWS unten links eingeschränkt',
+  'Kurvatur BWS unten rechts eingeschränkt',
+  'Kurvatur BWS unten beidseits eingeschränkt');
+
+// A — obere LWS Kurvatur (unter Y2)
+makePaar('A-L','A-R',CX,Y2+8,'A',
+  'Kurvatur LWS oben links eingeschränkt',
+  'Kurvatur LWS oben rechts eingeschränkt',
+  'Kurvatur LWS oben beidseits eingeschränkt');
+
+// O — untere LWS Kurvatur (über Y3)
+makePaar('O-L','O-R',CX,Y3-8,'O',
+  'Kurvatur LWS unten links eingeschränkt',
+  'Kurvatur LWS unten rechts eingeschränkt',
+  'Kurvatur LWS unten beidseits eingeschränkt');
+
+// Durales Muster — segmentierte Linie links und rechts, weiter lateral
+{const DX=32;
+ const GAP2=4; // Lücke an Querlinien
+ // Segmente: zwischen den Buchstaben-Bereichen
+ const segs=[
+   [CY_TOP, Y1-GAP2],            // E-Bereich bis CTÜ
+   [Y1+GAP2, Y2-GAP2],           // C-B Bereich
+   [Y2+GAP2, Y3-GAP2],           // A-O Bereich
+   [Y3+GAP2, Y3+SAC_T],          // bis Unterkante Sacrum = Höhe C
+ ];
+ ['L','R'].forEach(side=>{
+   const x=side==='L'?CX-DX:CX+DX;
+   const lines=segs.map(([y1,y2])=>
+     el('line',{x1:x,y1,x2:x,y2,stroke:'#999','stroke-width':3.5,'stroke-linecap':'round'})
+   );
+   const h=hit(x-8,CY_TOP,16,SAC_Y_BASE+SAC_T-CY_TOP);h.style.cursor='pointer';
+   sm['Dural-'+side]='neutral';
+   const fn=()=>{const next=cs('Dural-'+side);sm['Dural-'+side]=next;
+     lines.forEach(l=>l.setAttribute('stroke',next==='neutral'?'#999':SCOL[next]));
+     showSb('Durales Muster '+side,next);tonErfolgreich();};
+   reg2('Dural-'+side,fn,'Durales Muster '+side);h.addEventListener('click',fn);
+ });
+}
+
+// Condylen — weit oberhalb, mit Dreiecks-Pfeilen wie Querlinien
+{const CY_COND=CY_TOP-55,CR2=7,s=7,DX=32,gap=5;
+ ['L','R'].forEach(side=>{
+   const cx=side==='L'?CX-DX:CX+DX,cy=CY_COND;
+   const circ=el('circle',{cx,cy,r:CR2,fill:COL_BG,stroke:COL,'stroke-width':SW});
+
+   // Verbindungslinie oben + Dreieck anterior
+   mkl(cx,cy-CR2,cx,cy-CR2-gap);
+   const ptsA=`${cx},${cy-CR2-gap-s} ${cx-s*.6},${cy-CR2-gap} ${cx+s*.6},${cy-CR2-gap}`;
+   const triA=el('polygon',{points:ptsA,fill:'none',stroke:COL,'stroke-width':1.5});
+   // Verbindungslinie unten + Dreieck posterior
+   mkl(cx,cy+CR2,cx,cy+CR2+gap);
+   const ptsP=`${cx},${cy+CR2+gap+s} ${cx-s*.6},${cy+CR2+gap} ${cx+s*.6},${cy+CR2+gap}`;
+   const triP=el('polygon',{points:ptsP,fill:'none',stroke:COL,'stroke-width':1.5});
+
+   // Anterior
+   const hA=hit(cx-s-4,cy-CR2-s-4,s*2+8,s+8);hA.style.cursor='pointer';
+   sm[`Condyle-${side}-A`]='neutral';
+   const fnA=()=>{const next=cs(`Condyle-${side}-A`);sm[`Condyle-${side}-A`]=next;
+     triA.setAttribute('stroke',SCOL[next]);circ.setAttribute('stroke',SCOL[next]);
+     showSb(`Condyle ${side} anterior`,next);tonErfolgreich();};
+   reg2(`Condyle-${side}-A`,fnA,`Condyle ${side} anterior`);hA.addEventListener('click',fnA);
+
+   // Posterior
+   const hP=hit(cx-s-4,cy+CR2-4,s*2+8,s+8);hP.style.cursor='pointer';
+   sm[`Condyle-${side}-P`]='neutral';
+   const fnP=()=>{const next=cs(`Condyle-${side}-P`);sm[`Condyle-${side}-P`]=next;
+     triP.setAttribute('stroke',SCOL[next]);circ.setAttribute('stroke',SCOL[next]);
+     showSb(`Condyle ${side} posterior`,next);tonErfolgreich();};
+   reg2(`Condyle-${side}-P`,fnP,`Condyle ${side} posterior`);hP.addEventListener('click',fnP);
+ });
+
+ // Meckel Dach-Symbol bei Condylen (^) — in Verlängerung der HWS-Seitneigungs-Linien
+ ['L','R'].forEach(side=>{
+   const dirAusen=side==='L'?-1:1;
+   const cy=CY_TOP-55;
+   // HWS_L/R_CX entsprechend HWS Seitneigung: CX±dx*0.8 mit dx=100*cos(12°)
+   const dx=100*Math.cos(12*Math.PI/180);
+   const mX=side==='L'?CX-dx*0.8:CX+dx*0.8,mY=cy,mW=8,mH=6;
+   const m1=mkl(mX-mW/2,mY+mH/2,mX,mY-mH/2);
+   const m2=mkl(mX,mY-mH/2,mX+mW/2,mY+mH/2);
+   const h=hit(mX-mW/2-3,mY-mH/2-3,mW+6,mH+6);h.style.cursor='pointer';
+   sm[`Meckel-${side}`]='neutral';
+   const fn=()=>{const next=cs(`Meckel-${side}`);sm[`Meckel-${side}`]=next;[m1,m2].forEach(l=>l.setAttribute('stroke',SCOL[next]));showSb(`Meckel ${side}`,next);tonErfolgreich();};
+   reg2(`Meckel-${side}`,fn,`Meckel ${side}`);h.addEventListener('click',fn);
+ });
+
+ // Beidseits Meckel
+ sm['Meckel-B']='neutral';
+ reg2('Meckel-B',()=>{
+   ['L','R'].forEach(s=>{sm[`Meckel-${s}`]='neutral';reg[`Meckel-${s}`].cycle();});
+   showSb('Meckel beidseits','restricted');tonErfolgreich();
+ },'Meckel beidseits');
+
+ // Beidseits anterior
+ sm['Condyle-B-A']='neutral';
+ reg2('Condyle-B-A',()=>{
+   ['L','R'].forEach(s=>{sm[`Condyle-${s}-A`]='neutral';reg[`Condyle-${s}-A`].cycle();});
+   showSb('Beide Condylen anterior','restricted');tonErfolgreich();
+ },'Beide Condylen anterior');
+
+ // Beidseits posterior
+ sm['Condyle-B-P']='neutral';
+ reg2('Condyle-B-P',()=>{
+   ['L','R'].forEach(s=>{sm[`Condyle-${s}-P`]='neutral';reg[`Condyle-${s}-P`].cycle();});
+   showSb('Beide Condylen posterior','restricted');tonErfolgreich();
+ },'Beide Condylen posterior');
+}
+
+// Hyoid Pfeile — oberhalb von E
+{const HY=CY_TOP-18,L=20,TS=7;
+ // Hyoid links (Pfeil nach links)
+ {const ax=CX-20,ay=HY;
+  const shaft=el('line',{x1:ax+L,y1:ay,x2:ax,y2:ay,stroke:COL,'stroke-width':SW,'stroke-linecap':'round'});
+  const tip=el('polygon',{points:`${ax},${ay} ${ax+TS},${ay-TS/2} ${ax+TS},${ay+TS/2}`,fill:COL});
+  const h=el('rect',{x:ax-4,y:ay-8,width:L+8,height:16,fill:'transparent'});h.style.cursor='pointer';
+  sm['Hyoid-L']='neutral';
+  const fn=()=>{const next=cs('Hyoid-L');sm['Hyoid-L']=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb('Hyoid nach links',next);tonErfolgreich();};
+  reg2('Hyoid-L',fn,'Hyoid nach links');h.addEventListener('click',fn);}
+ // Hyoid rechts (Pfeil nach rechts)
+ {const ax=CX+20,ay=HY;
+  const shaft=el('line',{x1:ax-L,y1:ay,x2:ax,y2:ay,stroke:COL,'stroke-width':SW,'stroke-linecap':'round'});
+  const tip=el('polygon',{points:`${ax},${ay} ${ax-TS},${ay-TS/2} ${ax-TS},${ay+TS/2}`,fill:COL});
+  const h=el('rect',{x:ax-L-4,y:ay-8,width:L+8,height:16,fill:'transparent'});h.style.cursor='pointer';
+  sm['Hyoid-R']='neutral';
+  const fn=()=>{const next=cs('Hyoid-R');sm['Hyoid-R']=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb('Hyoid nach rechts',next);tonErfolgreich();};
+  reg2('Hyoid-R',fn,'Hyoid nach rechts');h.addEventListener('click',fn);}
+}
+
+// Kopf/Schädel Shift Querlinie — auf Höhe der Condylen
+{const KY=CY_TOP-55; // gleiche Höhe wie Condylen
+ const KLX=CX-12,KRX=CX+12; // nur zwischen Condylen
+ const linie=mkl(KLX,KY,KRX,KY);
+ const s=6;
+ const ptsL=`${KLX-s},${KY} ${KLX},${KY-s*.6} ${KLX},${KY+s*.6}`;
+ const ptsR=`${KRX+s},${KY} ${KRX},${KY-s*.6} ${KRX},${KY+s*.6}`;
+ const triL=el('polygon',{points:ptsL,fill:'none',stroke:COL,'stroke-width':1.5});
+ const triR=el('polygon',{points:ptsR,fill:'none',stroke:COL,'stroke-width':1.5});
+ const hL=hit(KLX-s-4,KY-s-4,s*2+8,s*2+8);hL.style.cursor='pointer';
+ const hR=hit(KRX-s-4,KY-s-4,s*2+8,s*2+8);hR.style.cursor='pointer';
+ sm['Kopf-L']='neutral';sm['Kopf-R']='neutral';
+ const cycL=()=>{const next=cs('Kopf-L');sm['Kopf-L']=next;sm['Kopf-R']='neutral';
+   triR.setAttribute('stroke',COL);[linie,triL].forEach(e=>e.setAttribute('stroke',SCOL[next]));
+   showSb('Kopf Shift links',next);tonErfolgreich();};
+ const cycR=()=>{const next=cs('Kopf-R');sm['Kopf-R']=next;sm['Kopf-L']='neutral';
+   triL.setAttribute('stroke',COL);[linie,triR].forEach(e=>e.setAttribute('stroke',SCOL[next]));
+   showSb('Kopf Shift rechts',next);tonErfolgreich();};
+ reg2('Kopf-L',cycL,'Kopf Shift links');reg2('Kopf-R',cycR,'Kopf Shift rechts');
+ hL.addEventListener('click',cycL);hR.addEventListener('click',cycR);
+}
+
+// HWS Seitneigung RL
+{const HWS_D=28,HWS_Y=CY_TOP-18;
+ const r=12*Math.PI/180,dx=100*Math.cos(r),dy=100*Math.sin(r);
+ const HWS_L_CX=CX-dx*0.8,HWS_R_CX=CX+dx*0.8;
+ const half=HWS_D/2;
+
+ // Seitneigung R (/)
+ {const cx=HWS_L_CX,cy=HWS_Y;
+  const l=el('line',{x1:cx-half,y1:cy+half,x2:cx+half,y2:cy-half,stroke:'#aaa','stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'4,3'});
+  const lbl=el('text',{x:cx,y:cy-half-8,'text-anchor':'middle','dominant-baseline':'middle','font-size':6,fill:'transparent','pointer-events':'none'});lbl.textContent='RL';svg.appendChild(lbl);
+  const h=hit(cx-half-6,cy-half-6,HWS_D+12,HWS_D+12);h.style.cursor='pointer';
+  sm['HWS-SN-R']='neutral';
+  const fn=()=>{const next=cs('HWS-SN-R');sm['HWS-SN-R']=next;const col=next==='neutral'?'#aaa':SCOL[next];l.setAttribute('stroke',col);lbl.setAttribute('fill',next==='neutral'?'transparent':col);showSb('Seitneigung HWS rechts',next);tonErfolgreich();};
+  reg2('HWS-SN-R',fn,'Seitneigung HWS rechts');h.addEventListener('click',fn);}
+
+ // Seitneigung L (\)
+ {const cx=HWS_R_CX,cy=HWS_Y;
+  const l=el('line',{x1:cx-half,y1:cy-half,x2:cx+half,y2:cy+half,stroke:'#aaa','stroke-width':SW,'stroke-linecap':'round','stroke-dasharray':'4,3'});
+  const lbl=el('text',{x:cx,y:cy-half-8,'text-anchor':'middle','dominant-baseline':'middle','font-size':6,fill:'transparent','pointer-events':'none'});lbl.textContent='RL';svg.appendChild(lbl);
+  const h=hit(cx-half-6,cy-half-6,HWS_D+12,HWS_D+12);h.style.cursor='pointer';
+  sm['HWS-SN-L']='neutral';
+  const fn=()=>{const next=cs('HWS-SN-L');sm['HWS-SN-L']=next;const col=next==='neutral'?'#aaa':SCOL[next];l.setAttribute('stroke',col);lbl.setAttribute('fill',next==='neutral'?'transparent':col);showSb('Seitneigung HWS links',next);tonErfolgreich();};
+  reg2('HWS-SN-L',fn,'Seitneigung HWS links');h.addEventListener('click',fn);}
+}
+
+// Schulterkreise RL — F, ABD, AR, IR, AR0
+{const SC_L_X=10,SC_R_X=290,SC_Y=Y1,CR=14,S=12,GAP=16;
+
+ function shoulderRL(side){
+   const cx=side==='L'?SC_L_X:SC_R_X,cy=SC_Y;
+
+   function updateCircle(){
+     const tests=[`RL-F-${side}`,`RL-ABD-${side}`,`RL-AR-${side}`,`RL-IR-${side}`,`RL-AR0-${side}`,`RL-Trakt-${side}`,`RL-SG1-${side}`,`RL-SG2-${side}`,`RL-SG3-${side}`,`RL-HochAdd-${side}`];
+     const active=tests.find(id=>sm[id]&&sm[id]!=='neutral');
+     circ.setAttribute('stroke',active?SCOL[sm[active]]:COL);
+   }
+
+   const circ=el('circle',{cx,cy,r:CR,fill:COL_BG,stroke:COL,'stroke-width':SW});
+
+
+  // Hohe Adduktion — gerader 45° Pfeil, gleicher Stil wie ABD und Traktion
+   {const dirIn3=side==='L'?1:-1;
+    // Start: Kreisrand 45° oben-innen
+    const r=CR*0.707;
+    const startX=cx+dirIn3*r,startY=cy-r;
+    // Ende: 14px weiter in 45° Richtung
+    const tipX=startX+dirIn3*10,tipY=startY-10;
+    const shaft=mkl(startX,startY,tipX,tipY);
+    // Pfeilspitze als gleichseitiges Dreieck (wie ABD aber rotiert um 45°)
+    // Basis senkrecht zur Achse, 5px vor Spitze
+    const baseX=tipX-dirIn3*3.5,baseY=tipY+3.5;
+    const tip=el('polygon',{points:`${tipX},${tipY} ${baseX-dirIn3*2.8},${baseY-2.8} ${baseX+dirIn3*2.8},${baseY+2.8}`,fill:COL});
+    const h=hit(Math.min(startX,tipX)-6,Math.min(startY,tipY)-6,Math.abs(tipX-startX)+12,Math.abs(tipY-startY)+12);h.style.cursor='pointer';
+    sm[`RL-HochAdd-${side}`]='neutral';
+    const fn=()=>{const next=cs(`RL-HochAdd-${side}`);sm[`RL-HochAdd-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);updateCircle();showSb(`Hohe Adduktion Schulter ${side}`,next);tonErfolgreich();};
+    reg2(`RL-HochAdd-${side}`,fn,`Hohe Adduktion Schulter ${side}`);h.addEventListener('click',fn);}
+
+   // SG1, SG2, SG3 lateral außen
+   const dirOut2=side==='L'?-1:1;
+   const sgX=cx+dirOut2*(CR+18);
+   [['SG1',cy-CR-18,'cranial','Hyperabduktion cranial'],
+    ['SG2',cy+2,'medial','Hyperabduktion medial / 90°'],
+    ['SG3',cy+CR+18,'caudal','Hyperabduktion caudal']
+   ].forEach(([label,y,bereich,desc])=>{
+     const id=`RL-${label}-${side}`;sm[id]='neutral';
+     const t=el('text',{x:''+sgX,y:''+y,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+     t.style.cursor='pointer';t.textContent=label;svg.appendChild(t);
+     const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',SCOL[next]);showSb(`${desc} ${side}`,next);tonErfolgreich();};
+     reg2(id,fn,`${desc} ${side}`);t.addEventListener('click',fn);
+   });
+
+   // F oben
+   {const t=el('text',{x:''+cx,y:''+(cy-CR-18),'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+    t.style.cursor='pointer';t.textContent='F';svg.appendChild(t);
+    sm[`RL-F-${side}`]='neutral';
+    const fn=()=>{const next=cs(`RL-F-${side}`);sm[`RL-F-${side}`]=next;t.setAttribute('fill',SCOL[next]);updateCircle();showSb(`Flexion Schulter ${side} RL`,next);tonErfolgreich();};
+    reg2(`RL-F-${side}`,fn,`Flexion Schulter ${side} RL`);t.addEventListener('click',fn);}
+
+   // ABD Pfeil — medial vom Kreis, zeigt nach innen (Richtung CX)
+   {const dirIn=side==='L'?1:-1;  // L: Pfeil rechts vom Kreis, zeigt nach rechts (zur Mitte)
+    const startX=cx+dirIn*CR;
+    const tipX=cx+dirIn*(CR+14);
+    const shaft=mkl(startX,cy,tipX,cy);
+    const tip=side==='L'
+      ?el('polygon',{points:`${tipX},${cy} ${tipX-5},${cy-4} ${tipX-5},${cy+4}`,fill:COL})
+      :el('polygon',{points:`${tipX},${cy} ${tipX+5},${cy-4} ${tipX+5},${cy+4}`,fill:COL});
+    const h=hit(Math.min(startX,tipX)-4,cy-8,Math.abs(startX-tipX)+8,16);h.style.cursor='pointer';
+    sm[`RL-ABD-${side}`]='neutral';
+    const fn=()=>{const next=cs(`RL-ABD-${side}`);sm[`RL-ABD-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);updateCircle();showSb(`Abduktion Schulter ${side} RL`,next);tonErfolgreich();};
+    reg2(`RL-ABD-${side}`,fn,`Abduktion Schulter ${side} RL`);h.addEventListener('click',fn);}
+
+   // Traktionspfeil — wie ABD-Pfeil, nach unten unter Kreis
+   {const tipY=cy+CR+14;
+    const shaft=mkl(cx,cy+CR,cx,tipY);
+    const tip=el('polygon',{points:`${cx},${tipY} ${cx-4},${tipY-5} ${cx+4},${tipY-5}`,fill:COL});
+    const h=hit(cx-8,cy+CR-4,16,18);h.style.cursor='pointer';
+    sm[`RL-Trakt-${side}`]='neutral';
+    const fn=()=>{const next=cs(`RL-Trakt-${side}`);sm[`RL-Trakt-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);updateCircle();showSb(`Traktion Schulter ${side}`,next);tonErfolgreich();};
+    reg2(`RL-Trakt-${side}`,fn,`Traktion Schulter ${side}`);h.addEventListener('click',fn);}
+
+   // AR/IR Winkel lateral
+   const wDir=side==='L'?-1:1;
+   const wBaseX=cx+wDir*(CR+GAP);
+
+   {const wx=side==='L'?wBaseX:wBaseX-S,wy=cy-GAP/2;
+    const anchorX=side==='L'?wx:wx+S;
+    const l1=mkl(wx,wy,wx+S,wy);const l2=mkl(anchorX,wy,anchorX,wy-S);
+    const h=hit(wx-4,wy-S-4,S+8,S+8);h.style.cursor='pointer';
+    sm[`RL-AR-${side}`]='neutral';
+    const fn=()=>{const next=cs(`RL-AR-${side}`);sm[`RL-AR-${side}`]=next;[l1,l2].forEach(l=>l.setAttribute('stroke',SCOL[next]));updateCircle();showSb(`Außenrotation 90° Schulter ${side} RL`,next);tonErfolgreich();};
+    reg2(`RL-AR-${side}`,fn,`Außenrotation 90° Schulter ${side} RL`);h.addEventListener('click',fn);}
+
+   {const wx=side==='L'?wBaseX:wBaseX-S,wy=cy+GAP/2;
+    const anchorX=side==='L'?wx:wx+S;
+    const l1=mkl(wx,wy,wx+S,wy);const l2=mkl(anchorX,wy,anchorX,wy+S);
+    const h=hit(wx-4,wy-4,S+8,S+8);h.style.cursor='pointer';
+    sm[`RL-IR-${side}`]='neutral';
+    const fn=()=>{const next=cs(`RL-IR-${side}`);sm[`RL-IR-${side}`]=next;[l1,l2].forEach(l=>l.setAttribute('stroke',SCOL[next]));updateCircle();showSb(`Innenrotation 90° Schulter ${side} RL`,next);tonErfolgreich();};
+    reg2(`RL-IR-${side}`,fn,`Innenrotation 90° Schulter ${side} RL`);h.addEventListener('click',fn);}
+
+   // AR0 Winkel unter Traktionspfeil (mittig)
+   {const dir=side==='L'?-1:1;
+    const wx=cx,wy=cy+CR+14+12;
+    const l1=mkl(wx,wy,wx,wy+S);
+    const l2=mkl(wx,wy+S,wx+dir*S,wy+S);
+    const lbl=el('text',{x:''+cx,y:''+(wy+S+8),'text-anchor':'middle','dominant-baseline':'middle','font-size':6,fill:'transparent','pointer-events':'none'});lbl.textContent='RL';svg.appendChild(lbl);
+    const h=hit(wx+Math.min(0,dir*S)-4,wy-4,S+8,S+8);h.style.cursor='pointer';
+    sm[`RL-AR0-${side}`]='neutral';
+    const fn=()=>{const next=cs(`RL-AR0-${side}`);sm[`RL-AR0-${side}`]=next;[l1,l2].forEach(l=>l.setAttribute('stroke',SCOL[next]));lbl.setAttribute('fill',next==='neutral'?'transparent':SCOL[next]);updateCircle();showSb(`Außenrotation Nullstellung Schulter ${side} RL`,next);tonErfolgreich();};
+    reg2(`RL-AR0-${side}`,fn,`Außenrotation Nullstellung Schulter ${side} RL`);h.addEventListener('click',fn);}
+
+
+ }
+
+ shoulderRL('L');shoulderRL('R');
+}
+
+// 4. Rippe (Sternchen), Cubiti Ex (Kreis), Cubiti Flex (V) — auf x der ABD-Pfeilspitze
+{const SC_L_X=10,SC_R_X=290,CR=14;
+ ['L','R'].forEach(side=>{
+   const cx=side==='L'?SC_L_X:SC_R_X;
+   const dirIn=side==='L'?1:-1;
+   // Pfeilspitze des ABD nach innen: cx+dirIn*(CR+14)
+   // Sternchen auf Pfeilspitzen-x (innerhalb)
+   const sternX=cx+dirIn*(CR+28);
+   // Kreis und V auf x-Position des AR0-Schenkels (cx+dirIn*S = cx+12 zur Mitte)
+   const cubX=cx+dirIn*12;
+  // 4. Rippe — Sternchen mittig zwischen Y1 und Y2
+   {const t=el('text',{x:''+sternX,y:''+((Y1+Y2)/2),'text-anchor':'middle','dominant-baseline':'middle','font-size':18,fill:COL});
+    t.style.cursor='pointer';t.textContent='\u2217';svg.appendChild(t);
+    sm[`Rippe4-${side}`]='neutral';
+    const fn=()=>{const next=cs(`Rippe4-${side}`);sm[`Rippe4-${side}`]=next;t.setAttribute('fill',SCOL[next]);showSb(`4. Rippe ${side}`,next);tonErfolgreich();};
+    reg2(`Rippe4-${side}`,fn,`4. Rippe ${side}`);t.addEventListener('click',fn);}
+
+   // Cubiti Extension — Kreis auf Höhe B (Y2-8)
+   {const cy2=Y2-4,r=7;
+    const c=el('circle',{cx:cubX,cy:cy2,r,fill:'none',stroke:COL,'stroke-width':1.5});
+    const h=hit(cubX-r-4,cy2-r-4,r*2+8,r*2+8);h.style.cursor='pointer';
+    sm[`CubExt-${side}`]='neutral';
+    const fn=()=>{const next=cs(`CubExt-${side}`);sm[`CubExt-${side}`]=next;c.setAttribute('stroke',SCOL[next]);showSb(`Extension Cubiti ${side}`,next);tonErfolgreich();};
+    reg2(`CubExt-${side}`,fn,`Extension Cubiti ${side}`);h.addEventListener('click',fn);}
+
+   // Supination + Palmarextension auf Höhe Kreis (Y2-4)
+   {const cySP=Y2-4;
+    const peX=cx-dirIn*(CR+18); // auf SG-Linie
+    const sX=(cubX+peX)/2; // mittig zwischen Cubiti und PE
+    // S — Supination
+    const tS=el('text',{x:''+sX,y:''+cySP,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+    tS.style.cursor='pointer';tS.textContent='S';svg.appendChild(tS);
+    sm[`Sup-${side}`]='neutral';
+    const fnS=()=>{const next=cs(`Sup-${side}`);sm[`Sup-${side}`]=next;tS.setAttribute('fill',SCOL[next]);showSb(`Supination ${side}`,next);tonErfolgreich();};
+    reg2(`Sup-${side}`,fnS,`Supination ${side}`);tS.addEventListener('click',fnS);
+    // PE — Palmarextension
+    const tPE=el('text',{x:''+peX,y:''+cySP,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+    tPE.style.cursor='pointer';tPE.textContent='PE';svg.appendChild(tPE);
+    sm[`PalmEx-${side}`]='neutral';
+    const fnPE=()=>{const next=cs(`PalmEx-${side}`);sm[`PalmEx-${side}`]=next;tPE.setAttribute('fill',SCOL[next]);showSb(`Palmarextension ${side}`,next);tonErfolgreich();};
+    reg2(`PalmEx-${side}`,fnPE,`Palmarextension ${side}`);tPE.addEventListener('click',fnPE);
+   }
+
+   // Pronation + Palmarflexion auf Höhe V (Y2+18)
+   {const cyPP=Y2+18;
+    const pfX=cx-dirIn*(CR+18);
+    const pX=(cubX+pfX)/2;
+    // P — Pronation
+    const tP=el('text',{x:''+pX,y:''+cyPP,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+    tP.style.cursor='pointer';tP.textContent='P';svg.appendChild(tP);
+    sm[`Pron-${side}`]='neutral';
+    const fnP=()=>{const next=cs(`Pron-${side}`);sm[`Pron-${side}`]=next;tP.setAttribute('fill',SCOL[next]);showSb(`Pronation ${side}`,next);tonErfolgreich();};
+    reg2(`Pron-${side}`,fnP,`Pronation ${side}`);tP.addEventListener('click',fnP);
+    // PF — Palmarflexion
+    const tPF=el('text',{x:''+pfX,y:''+cyPP,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+    tPF.style.cursor='pointer';tPF.textContent='PF';svg.appendChild(tPF);
+    sm[`PalmFl-${side}`]='neutral';
+    const fnPF=()=>{const next=cs(`PalmFl-${side}`);sm[`PalmFl-${side}`]=next;tPF.setAttribute('fill',SCOL[next]);showSb(`Palmarflexion ${side}`,next);tonErfolgreich();};
+    reg2(`PalmFl-${side}`,fnPF,`Palmarflexion ${side}`);tPF.addEventListener('click',fnPF);
+   }
+
+   // Cubiti Flexion — liegendes V auf Höhe A (Y2+8)
+   {const cy3=Y2+18,vs=8;
+    let v;
+    if(side==='R'){
+      v=el('polyline',{points:`${cubX+vs/2},${cy3-vs} ${cubX-vs/2},${cy3} ${cubX+vs/2},${cy3+vs}`,fill:'none',stroke:COL,'stroke-width':1.5,'stroke-linecap':'round','stroke-linejoin':'round'});
+    } else {
+      v=el('polyline',{points:`${cubX-vs/2},${cy3-vs} ${cubX+vs/2},${cy3} ${cubX-vs/2},${cy3+vs}`,fill:'none',stroke:COL,'stroke-width':1.5,'stroke-linecap':'round','stroke-linejoin':'round'});
+    }
+    const h=hit(cubX-vs-4,cy3-vs-4,vs*2+8,vs*2+8);h.style.cursor='pointer';
+    sm[`CubFlex-${side}`]='neutral';
+    const fn=()=>{const next=cs(`CubFlex-${side}`);sm[`CubFlex-${side}`]=next;v.setAttribute('stroke',SCOL[next]);showSb(`Flexion Cubiti ${side}`,next);tonErfolgreich();};
+    reg2(`CubFlex-${side}`,fn,`Flexion Cubiti ${side}`);h.addEventListener('click',fn);}
+ });
+}
+
+// Hüft-Symbole auf Y3 — obere Zeile: I III E (von innen), untere: II IV F
+{const oben=Y3-9,unten=Y3+9,fontSz=10;
+ ['L','R'].forEach(side=>{
+   const SC_X=side==='L'?10:290; // Schulterkreis-Mitte
+   const dirIn=side==='L'?1:-1;  // L: +1 zur Mitte, R: -1 zur Mitte
+   const CR_S=14;
+   // Position auf x-Achse wie Cubiti, S, PE
+   // I (innen) auf S-Position, III auf Kreis-Position, E auf PE-Position
+   const cubX=SC_X+dirIn*12;
+   const peX=SC_X-dirIn*(CR_S+18);
+   const sX=(cubX+peX)/2;
+   const xs=[cubX,sX,peX]; // I, III, E von innen nach außen
+   // Obere Zeile: I, III, E
+   ['I','III','E'].forEach((label,i)=>{
+     const id=`Hueft-${label}-${side}`;sm[id]='neutral';
+     const t=el('text',{x:''+xs[i],y:''+oben,'text-anchor':'middle','dominant-baseline':'middle','font-size':fontSz,fill:COL});
+     t.style.cursor='pointer';t.textContent=label;svg.appendChild(t);
+     const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',SCOL[next]);showSb(`Hüfte ${label} ${side}`,next);tonErfolgreich();};
+     reg2(id,fn,`Hüfte ${label} ${side}`);t.addEventListener('click',fn);
+   });
+   // Untere Zeile: II, IV, F
+   ['II','IV','F'].forEach((label,i)=>{
+     const id=`Hueft-${label}-${side}`;sm[id]='neutral';
+     const t=el('text',{x:''+xs[i],y:''+unten,'text-anchor':'middle','dominant-baseline':'middle','font-size':fontSz,fill:COL});
+     t.style.cursor='pointer';t.textContent=label;svg.appendChild(t);
+     const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',SCOL[next]);showSb(`Hüfte ${label} ${side}`,next);tonErfolgreich();};
+     reg2(id,fn,`Hüfte ${label} ${side}`);t.addEventListener('click',fn);
+   });
+ });
+}
+
+// Hüft-Rotationspfeile unter Y3 — IR L, AR L (gerade), IR K, AR K (geschwungen)
+{const ROT_Y_TOP=Y3+SAC_T*0.6, ROT_Y_BOT=Y3+SAC_T*1.0;
+ ['L','R'].forEach(side=>{
+   const dirAusen=side==='L'?-1:1; // L: nach links (außen), R: nach rechts (außen)
+   // Pfeile zwischen duralem Muster (CX±32) und Querlinie-Ende (LX=50, RX=250)
+   // Mitte zwischen 32 und 100 (vom CX) = bei 66 vom CX entfernt
+   const xCenter=CX+dirAusen*55;
+   const arrowL=26, ts=5;
+
+   // === OBERE LINIE ===
+   // Gerader Pfeil nach außen — IR L (lang)
+   {const y=ROT_Y_TOP, xStart=xCenter-dirAusen*arrowL/2, xEnd=xCenter+dirAusen*arrowL/2;
+    const shaftEnd=xEnd-dirAusen*ts;
+    const shaft=mkl(xStart,y,shaftEnd,y);
+    const tip=el('polygon',{points:`${xEnd},${y} ${xEnd-dirAusen*ts},${y-ts} ${xEnd-dirAusen*ts},${y+ts}`,fill:'none',stroke:COL,'stroke-width':1.5});
+    // Schrift beginnt wo Schaft beginnt
+    const lblAnchor=dirAusen===1?'start':'end';
+    const lbl=el('text',{x:''+xStart,y:''+(y-9),'text-anchor':lblAnchor,'dominant-baseline':'middle','font-size':8,fill:COL,'pointer-events':'none'});
+    lbl.textContent='IR L';svg.appendChild(lbl);
+    const h=hit(Math.min(xStart,xEnd)-4,y-8,arrowL+8,16);h.style.cursor='pointer';
+    sm[`HuefIRL-${side}`]='neutral';
+    const fn=()=>{const next=cs(`HuefIRL-${side}`);sm[`HuefIRL-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('stroke',SCOL[next]);lbl.setAttribute('fill',SCOL[next]);showSb(`Innenrotation lang Hüfte ${side}`,next);tonErfolgreich();};
+    reg2(`HuefIRL-${side}`,fn,`Innenrotation lang Hüfte ${side}`);h.addEventListener('click',fn);}
+
+   // Geschwungener Pfeil — IR K (kurz, horizontal liegend, Bogen oben)
+   {const y=ROT_Y_TOP, xCK=xCenter+dirAusen*40;
+    const rArc=12;
+    // Halbkreis-Bogen waagrecht (oben offen) — von links nach rechts
+    const xL=xCK-rArc, xR=xCK+rArc;
+    const path=el('path',{d:`M ${xL},${y} A ${rArc} ${rArc} 0 0 1 ${xR},${y}`,fill:'none',stroke:COL,'stroke-width':SW,'stroke-linecap':'round'});
+    // Pfeilspitze nach UNTEN (Dreieck mit Spitze unten)
+    const tipX=dirAusen===-1?xL:xR;
+    const tipY=y;
+    const tip=el('polygon',{points:`${tipX},${tipY+ts*1.2} ${tipX-ts*0.7},${tipY} ${tipX+ts*0.7},${tipY}`,fill:'none',stroke:COL,'stroke-width':1.5});
+    const lbl=el('text',{x:''+xCK,y:''+(y-rArc-5),'text-anchor':'middle','dominant-baseline':'middle','font-size':8,fill:COL,'pointer-events':'none'});
+    lbl.textContent='IR K';svg.appendChild(lbl);
+    const h=hit(xL-4,y-rArc-4,rArc*2+8,rArc+8);h.style.cursor='pointer';
+    sm[`HuefIRK-${side}`]='neutral';
+    const fn=()=>{const next=cs(`HuefIRK-${side}`);sm[`HuefIRK-${side}`]=next;path.setAttribute('stroke',SCOL[next]);tip.setAttribute('stroke',SCOL[next]);lbl.setAttribute('fill',SCOL[next]);showSb(`Innenrotation kurz Hüfte ${side}`,next);tonErfolgreich();};
+    reg2(`HuefIRK-${side}`,fn,`Innenrotation kurz Hüfte ${side}`);h.addEventListener('click',fn);}
+
+   // === UNTERE LINIE ===
+   // Gerader Pfeil nach innen — AR L (lang)
+   {const y=ROT_Y_BOT, xStart=xCenter+dirAusen*arrowL/2, xEnd=xCenter-dirAusen*arrowL/2;
+    const shaftEnd=xEnd+dirAusen*ts;
+    const shaft=mkl(xStart,y,shaftEnd,y);
+    const tip=el('polygon',{points:`${xEnd},${y} ${xEnd+dirAusen*ts},${y-ts} ${xEnd+dirAusen*ts},${y+ts}`,fill:'none',stroke:COL,'stroke-width':1.5});
+    // Schrift beginnt wo Schaft beginnt
+    // AR L: xStart ist außen (Pfeil zeigt nach innen), also Schrift "beginnt" am Schaftanfang außen
+    const lblAnchor=dirAusen===1?'end':'start';
+    const lbl=el('text',{x:''+xStart,y:''+(y+9),'text-anchor':lblAnchor,'dominant-baseline':'middle','font-size':8,fill:COL,'pointer-events':'none'});
+    lbl.textContent='AR L';svg.appendChild(lbl);
+    const h=hit(Math.min(xStart,xEnd)-4,y-8,arrowL+8,16);h.style.cursor='pointer';
+    sm[`HuefARL-${side}`]='neutral';
+    const fn=()=>{const next=cs(`HuefARL-${side}`);sm[`HuefARL-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('stroke',SCOL[next]);lbl.setAttribute('fill',SCOL[next]);showSb(`Außenrotation lang Hüfte ${side}`,next);tonErfolgreich();};
+    reg2(`HuefARL-${side}`,fn,`Außenrotation lang Hüfte ${side}`);h.addEventListener('click',fn);}
+
+   // Geschwungener Pfeil — AR K (kurz, horizontal liegend, Bogen unten)
+   {const y=ROT_Y_BOT, xCK=xCenter+dirAusen*40;
+    const rArc=12;
+    const xL=xCK-rArc, xR=xCK+rArc;
+    // Halbkreis-Bogen waagrecht (unten offen)
+    const path=el('path',{d:`M ${xL},${y} A ${rArc} ${rArc} 0 0 0 ${xR},${y}`,fill:'none',stroke:COL,'stroke-width':SW,'stroke-linecap':'round'});
+    // Pfeilspitze nach OBEN (Dreieck mit Spitze oben)
+    const tipX=dirAusen===-1?xR:xL;
+    const tipY=y;
+    const tip=el('polygon',{points:`${tipX},${tipY-ts*1.2} ${tipX-ts*0.7},${tipY} ${tipX+ts*0.7},${tipY}`,fill:'none',stroke:COL,'stroke-width':1.5});
+    const lbl=el('text',{x:''+xCK,y:''+(y+rArc+8),'text-anchor':'middle','dominant-baseline':'middle','font-size':8,fill:COL,'pointer-events':'none'});
+    lbl.textContent='AR K';svg.appendChild(lbl);
+    const h=hit(xL-4,y-rArc-4,rArc*2+8,rArc+8);h.style.cursor='pointer';
+    sm[`HuefARK-${side}`]='neutral';
+    const fn=()=>{const next=cs(`HuefARK-${side}`);sm[`HuefARK-${side}`]=next;path.setAttribute('stroke',SCOL[next]);tip.setAttribute('stroke',SCOL[next]);lbl.setAttribute('fill',SCOL[next]);showSb(`Außenrotation kurz Hüfte ${side}`,next);tonErfolgreich();};
+    reg2(`HuefARK-${side}`,fn,`Außenrotation kurz Hüfte ${side}`);h.addEventListener('click',fn);}
+ });
+}
+
+// Knie-Symbole — Kreis (Extension) oben, V (Flexion) unten, x wie Cubiti
+{const KNEE_TOP=Y3+SAC_T+45, KNEE_BOT=Y3+SAC_T+72;
+ const KNEE12_Y=Y3+SAC_T+95;
+ ['L','R'].forEach(side=>{
+   const SC_X=side==='L'?10:290;
+   const dirIn=side==='L'?1:-1;
+   const cubX=SC_X+dirIn*12;
+
+   // Extension Knie — Kreis oben
+   {const r=7;
+    const c=el('circle',{cx:cubX,cy:KNEE_TOP,r,fill:'none',stroke:COL,'stroke-width':1.5});
+    const h=hit(cubX-r-4,KNEE_TOP-r-4,r*2+8,r*2+8);h.style.cursor='pointer';
+    sm[`KnieExt-${side}`]='neutral';
+    const fn=()=>{const next=cs(`KnieExt-${side}`);sm[`KnieExt-${side}`]=next;c.setAttribute('stroke',SCOL[next]);showSb(`Extension Knie ${side}`,next);tonErfolgreich();};
+    reg2(`KnieExt-${side}`,fn,`Extension Knie ${side}`);h.addEventListener('click',fn);}
+
+   // Flexion Knie — liegendes V unten
+   {const vs=8;
+    let v;
+    if(side==='R'){
+      v=el('polyline',{points:`${cubX+vs/2},${KNEE_BOT-vs} ${cubX-vs/2},${KNEE_BOT} ${cubX+vs/2},${KNEE_BOT+vs}`,fill:'none',stroke:COL,'stroke-width':1.5,'stroke-linecap':'round','stroke-linejoin':'round'});
+    } else {
+      v=el('polyline',{points:`${cubX-vs/2},${KNEE_BOT-vs} ${cubX+vs/2},${KNEE_BOT} ${cubX-vs/2},${KNEE_BOT+vs}`,fill:'none',stroke:COL,'stroke-width':1.5,'stroke-linecap':'round','stroke-linejoin':'round'});
+    }
+    const h=hit(cubX-vs-4,KNEE_BOT-vs-4,vs*2+8,vs*2+8);h.style.cursor='pointer';
+    sm[`KnieFlex-${side}`]='neutral';
+    const fn=()=>{const next=cs(`KnieFlex-${side}`);sm[`KnieFlex-${side}`]=next;v.setAttribute('stroke',SCOL[next]);showSb(`Flexion Knie ${side}`,next);tonErfolgreich();};
+    reg2(`KnieFlex-${side}`,fn,`Flexion Knie ${side}`);h.addEventListener('click',fn);}
+ });
+}
+
+// Knie 1 + Knie 2 — wie Condylen aber mit horizontalen Pfeilen, Zahl im Kreis
+{const CR2=8,s=7;
+ const K1=Y3+SAC_T+45,K2=Y3+SAC_T+72,K3=Y3+SAC_T+99;
+ ['L','R'].forEach(side=>{
+   const SC_X=side==='L'?10:290;
+   const dirIn=side==='L'?1:-1;
+   const cubX=SC_X+dirIn*12;
+   const kniex=cubX+dirIn*38;
+   [['1',K1],['2',K2],['3',K3]].forEach(([num,cy])=>{
+     const kx=kniex;
+     // Kreis
+     const circ=el('circle',{cx:kx,cy,r:CR2,fill:COL_BG,stroke:COL,'stroke-width':SW});
+     // Zahl in der Mitte
+     const numT=el('text',{x:''+kx,y:''+cy,'text-anchor':'middle','dominant-baseline':'central','font-size':8,fill:COL,'pointer-events':'none'});
+     numT.textContent=num;svg.appendChild(numT);
+
+     // Pfeil nach innen (zur Mitte) — Außenrotationseinschränkung
+     const gap=8, triS=7;
+     const inLineEnd=kx+dirIn*(CR2+gap);
+     const inTipEnd=inLineEnd+dirIn*triS;
+     const inLine=mkl(kx+dirIn*CR2,cy,inLineEnd,cy);
+     const ptsAR=`${inTipEnd},${cy} ${inLineEnd},${cy-triS*0.7} ${inLineEnd},${cy+triS*0.7}`;
+     const triAR=el('polygon',{points:ptsAR,fill:'none',stroke:COL,'stroke-width':1.5});
+     const hAR=hit(kx+dirIn*CR2-4,cy-triS,Math.abs(inTipEnd-kx)+8,triS*2);hAR.style.cursor='pointer';
+     const idAR=`Knie${num}-AR-${side}`;sm[idAR]='neutral';
+     const fnAR=()=>{const next=cs(idAR);sm[idAR]=next;triAR.setAttribute('stroke',SCOL[next]);inLine.setAttribute('stroke',SCOL[next]);circ.setAttribute('stroke',SCOL[next]);numT.setAttribute('fill',SCOL[next]);showSb(`Außenrotation Knie ${num} ${side}`,next);tonErfolgreich();};
+     reg2(idAR,fnAR,`Außenrotation Knie ${num} ${side}`);hAR.addEventListener('click',fnAR);
+
+     // Pfeil nach außen (weg von Mitte) — Innenrotationseinschränkung
+     const outLineEnd=kx-dirIn*(CR2+gap);
+     const outTipEnd=outLineEnd-dirIn*triS;
+     const outLine=mkl(kx-dirIn*CR2,cy,outLineEnd,cy);
+     const ptsIR=`${outTipEnd},${cy} ${outLineEnd},${cy-triS*0.7} ${outLineEnd},${cy+triS*0.7}`;
+     const triIR=el('polygon',{points:ptsIR,fill:'none',stroke:COL,'stroke-width':1.5});
+     const hIR=hit(outTipEnd-4,cy-triS,Math.abs(outTipEnd-kx)+8,triS*2);hIR.style.cursor='pointer';
+     const idIR=`Knie${num}-IR-${side}`;sm[idIR]='neutral';
+     const fnIR=()=>{const next=cs(idIR);sm[idIR]=next;triIR.setAttribute('stroke',SCOL[next]);outLine.setAttribute('stroke',SCOL[next]);circ.setAttribute('stroke',SCOL[next]);numT.setAttribute('fill',SCOL[next]);showSb(`Innenrotation Knie ${num} ${side}`,next);tonErfolgreich();};
+     reg2(idIR,fnIR,`Innenrotation Knie ${num} ${side}`);hIR.addEventListener('click',fnIR);
+   });
+ });
+}
+
+// Nierenzone — Sternchen zwischen Y2 und Y3, deutlich innen
+{const nyY=(Y2+Y3)/2;
+ [['L',CX-50],['R',CX+50]].forEach(([side,nx])=>{
+   const t=el('text',{x:''+nx,y:''+nyY,'text-anchor':'middle','dominant-baseline':'middle','font-size':18,fill:COL});
+   t.style.cursor='pointer';t.textContent='\u2217';svg.appendChild(t);
+   sm[`Niere-${side}`]='neutral';
+   const fn=()=>{const next=cs(`Niere-${side}`);sm[`Niere-${side}`]=next;t.setAttribute('fill',SCOL[next]);showSb(`Nierenzone ${side}`,next);tonErfolgreich();};
+   reg2(`Niere-${side}`,fn,`Nierenzone ${side}`);t.addEventListener('click',fn);
+ });
+}
+
+// DE = Dorsalextension Fuß — oberhalb Fußpfeile, x wie Knie-Kreis
+{const deY=Y3+SAC_T+125;
+ ['L','R'].forEach(side=>{
+   const SC_X=side==='L'?10:290;
+   const dirIn=side==='L'?1:-1;
+   const cubX=SC_X+dirIn*12;
+   const t=el('text',{x:''+cubX,y:''+deY,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+   t.style.cursor='pointer';t.textContent='DE';svg.appendChild(t);
+   sm[`DorsExt-${side}`]='neutral';
+   const fn=()=>{const next=cs(`DorsExt-${side}`);sm[`DorsExt-${side}`]=next;t.setAttribute('fill',SCOL[next]);showSb(`Dorsalextension Fuß ${side}`,next);tonErfolgreich();};
+   reg2(`DorsExt-${side}`,fn,`Dorsalextension Fuß ${side}`);t.addEventListener('click',fn);
+ });
+}
+
+// Chorda Detail — 2 Zeilen mit je Pfeil + 6 Buchstaben horizontal
+{const chDetailY=Y3+SAC_T+182;
+ const labelsCranial=['HS','S','L','B','H','RM'];
+ const labelsCaudal=['RM','H','B','L','S','HS'];
+ const fullNames={
+   'HS':'Hiatus Sacralis','S':'Sacrum','L':'LWS','B':'BWS','H':'HWS','RM':'Rhomb-Mesencephalon'
+ };
+ const STEP=14;
+
+ ['L','R'].forEach(side=>{
+   const SC_X=side==='L'?10:290;
+   const dirIn=side==='L'?1:-1;
+   const cubX=SC_X+dirIn*12;
+   const fx=cubX+dirIn*38;
+   // Block-Mitte = fx, links davon Pfeil, rechts davon Buchstaben (oder umgekehrt)
+   // Buchstaben horizontal angeordnet, Pfeil davor (links)
+
+   // Pfeil lateral außen, Buchstaben Richtung Mitte
+   const arrX=cubX-dirIn*8;
+   // Bei R mehr Abstand zum Pfeil
+   const lettersStartX=side==='L'?arrX+dirIn*20:arrX+dirIn*90;
+
+   // === Zeile 1: Pfeil nach unten + Buchstaben cranial ===
+   const y1=chDetailY;
+   {const aLen=14,ts=6;
+    const shaft=mkl(arrX,y1-aLen/2,arrX,y1+aLen/2-ts);
+    const tip=el('polygon',{points:`${arrX},${y1+aLen/2} ${arrX-ts/2},${y1+aLen/2-ts} ${arrX+ts/2},${y1+aLen/2-ts}`,fill:COL});
+    sm[`ChordaDownArrow-${side}`]='neutral';
+    const h=hit(arrX-5,y1-aLen,10,aLen*2);h.style.cursor='pointer';
+    const fn=()=>{const next=cs(`ChordaDownArrow-${side}`);sm[`ChordaDownArrow-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb(`Chorda nicht cranial ${side}`,next);tonErfolgreich();};
+    reg2(`ChordaDownArrow-${side}`,fn,`Chorda nicht cranial ${side}`);h.addEventListener('click',fn);
+   }
+   labelsCranial.forEach((lbl,i)=>{
+     const lx=lettersStartX+i*STEP;
+     const id=`ChordaC-${lbl}-${side}`;sm[id]='neutral';
+     const t=el('text',{x:''+lx,y:''+y1,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+     t.style.cursor='pointer';t.textContent=lbl;svg.appendChild(t);
+     const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',SCOL[next]);showSb(`Chorda ${fullNames[lbl]} ${side} cranial`,next);tonErfolgreich();};
+     reg2(id,fn,`Chorda ${fullNames[lbl]} ${side} cranial`);t.addEventListener('click',fn);
+   });
+
+   // === Zeile 2: Pfeil nach oben + Buchstaben caudal ===
+   const y2=y1+18;
+   {const aLen=14,ts=6;
+    const shaft=mkl(arrX,y2-aLen/2+ts,arrX,y2+aLen/2);
+    const tip=el('polygon',{points:`${arrX},${y2-aLen/2} ${arrX-ts/2},${y2-aLen/2+ts} ${arrX+ts/2},${y2-aLen/2+ts}`,fill:COL});
+    sm[`ChordaUpArrow-${side}`]='neutral';
+    const h=hit(arrX-5,y2-aLen,10,aLen*2);h.style.cursor='pointer';
+    const fn=()=>{const next=cs(`ChordaUpArrow-${side}`);sm[`ChordaUpArrow-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb(`Chorda nicht caudal ${side}`,next);tonErfolgreich();};
+    reg2(`ChordaUpArrow-${side}`,fn,`Chorda nicht caudal ${side}`);h.addEventListener('click',fn);
+   }
+   labelsCaudal.forEach((lbl,i)=>{
+     const lx=lettersStartX+i*STEP;
+     const id=`ChordaCau-${lbl}-${side}`;sm[id]='neutral';
+     const t=el('text',{x:''+lx,y:''+y2,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+     t.style.cursor='pointer';t.textContent=lbl;svg.appendChild(t);
+     const fn=()=>{const next=cs(id);sm[id]=next;t.setAttribute('fill',SCOL[next]);showSb(`Chorda ${fullNames[lbl]} ${side} caudal`,next);tonErfolgreich();};
+     reg2(id,fn,`Chorda ${fullNames[lbl]} ${side} caudal`);t.addEventListener('click',fn);
+   });
+ });
+}
+
+// ViewBox erweitern für Chorda-Detail
+// (passiert bei nächstem Reload — bereits drin)
+
+// Chorda — unter PLF, öffnet Chorda-Tab beim Antippen
+{const chY=Y3+SAC_T+165;
+ ['L','R'].forEach(side=>{
+   const SC_X=side==='L'?10:290;
+   const dirIn=side==='L'?1:-1;
+   const cubX=SC_X+dirIn*12;
+   const fx=cubX+dirIn*38;
+   const t=el('text',{x:''+fx,y:''+chY,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+   t.style.cursor='pointer';t.textContent='Chorda';svg.appendChild(t);
+   sm[`Chorda-${side}`]='neutral';
+   const fn=()=>{const next=cs(`Chorda-${side}`);sm[`Chorda-${side}`]=next;t.setAttribute('fill',SCOL[next]);showSb(`Chorda ${side}`,next);tonErfolgreich();};
+   reg2(`Chorda-${side}`,fn,`Chorda ${side}`);t.addEventListener('click',fn);
+ });
+}
+
+// PLF = Plantarflexion Fuß — unterhalb Fußpfeil
+{const plfY=Y3+SAC_T+145;
+ ['L','R'].forEach(side=>{
+   const SC_X=side==='L'?10:290;
+   const dirIn=side==='L'?1:-1;
+   const cubX=SC_X+dirIn*12;
+   const t=el('text',{x:''+cubX,y:''+plfY,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL});
+   t.style.cursor='pointer';t.textContent='PLF';svg.appendChild(t);
+   sm[`PlantFl-${side}`]='neutral';
+   const fn=()=>{const next=cs(`PlantFl-${side}`);sm[`PlantFl-${side}`]=next;t.setAttribute('fill',SCOL[next]);showSb(`Plantarflexion Fuß ${side}`,next);tonErfolgreich();};
+   reg2(`PlantFl-${side}`,fn,`Plantarflexion Fuß ${side}`);t.addEventListener('click',fn);
+ });
+}
+
+// Sprunggelenk — Doppelpfeil <—> für Spreizung Malleolengabel (Kompression)
+{const fY=Y3+SAC_T+135;
+ ['L','R'].forEach(side=>{
+   const SC_X=side==='L'?10:290;
+   const dirIn=side==='L'?1:-1;
+   const cubX=SC_X+dirIn*12;
+   const fx=cubX+dirIn*38;
+   const w=32,ts=5;
+   // Schaft horizontal — endet an Dreiecks-Basen
+   const shaft=mkl(fx-w/2+ts,fY,fx+w/2-ts,fY);
+   // Pfeilspitze links
+   const tipL=el('polygon',{points:`${fx-w/2-2},${fY} ${fx-w/2+ts},${fY-ts} ${fx-w/2+ts},${fY+ts}`,fill:'none',stroke:COL,'stroke-width':1.5});
+   // Pfeilspitze rechts
+   const tipR=el('polygon',{points:`${fx+w/2+2},${fY} ${fx+w/2-ts},${fY-ts} ${fx+w/2-ts},${fY+ts}`,fill:'none',stroke:COL,'stroke-width':1.5});
+   const h=hit(fx-w/2-6,fY-8,w+12,16);h.style.cursor='pointer';
+   sm[`Fuss-${side}`]='neutral';
+   const fn=()=>{const next=cs(`Fuss-${side}`);sm[`Fuss-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);[tipL,tipR].forEach(t=>t.setAttribute('stroke',SCOL[next]));showSb(`Sprunggelenk Kompression ${side}`,next);tonErfolgreich();};
+   reg2(`Fuss-${side}`,fn,`Sprunggelenk Kompression ${side}`);h.addEventListener('click',fn);
+ });
+}
+
+// Schulterblätter — Dreieck-Form + 5 Pfeile pro Seite zwischen Y1 und Y2
+{const SCAP_Y=[Y1+8,Y1+22,Y1+40,Y1+56,Y1+64];
+ const labels=['Kehle','Trachea','Ösophagus','Leber','Caudal'];
+ const ids=['Rachen','Trachea','Oesoph','Leber','ScapCaudal'];
+ ['L','R'].forEach(side=>{
+   const SC_X=side==='L'?10:290;
+   const dirIn=side==='L'?1:-1;
+   const dirAusen=-dirIn;
+   const baseX=CX+dirAusen*60;
+
+   // Schulterblatt-Form: nach unten zulaufendes Dreieck mit Spina scapulae horizontal
+   // Obere Basis bei Y1+8 (breit), Spitze bei Y1+72 (Angulus inferior)
+   const scapTop=Y1+6,scapBot=Y1+58;
+   const scapWidth=20; // halbe Breite der Basis oben
+   // Lateraler Rand (außen)
+   const xOuter=baseX-dirIn*30;
+   const xInner=baseX+dirIn*10;
+   const tipX=(xOuter+xInner)/2;
+   // Dreieck: oben breit (xOuter bis xInner, Breite 40), Spitze unten in Mitte
+   const scapPts=`${xOuter},${scapTop} ${xInner},${scapTop} ${tipX},${scapBot}`;
+   el('polygon',{points:scapPts,fill:'none',stroke:COL,'stroke-width':1.5});
+   // Spina scapulae — horizontale Linie auf Höhe Trachea-Pfeil
+   const spinaY=Y1+22;
+   const spinaXOuter=xOuter+(tipX-xOuter)*((spinaY-scapTop)/(scapBot-scapTop));
+   const spinaXInner=xInner+(tipX-xInner)*((spinaY-scapTop)/(scapBot-scapTop));
+   mkl(spinaXOuter,spinaY,spinaXInner,spinaY,{stroke:COL,'stroke-width':1});
+   const aL=14,ts=5;
+
+   // Erste 4 Pfeile: nach medial (Richtung Mitte = dirIn)
+   for(let i=0;i<4;i++){
+     const y=SCAP_Y[i];
+     const id=`Scap-${ids[i]}-${side}`;
+     const tProp=(y-scapTop)/(scapBot-scapTop);
+     const xInnerY=xInner+(tipX-xInner)*tProp;
+     const startX=xInnerY+dirIn*2;
+     const endX=startX+dirIn*aL;
+     const shaft=mkl(startX,y,endX-dirIn*ts,y);
+     const tip=el('polygon',{points:`${endX},${y} ${endX-dirIn*ts},${y-ts/2} ${endX-dirIn*ts},${y+ts/2}`,fill:COL});
+     const h=hit(Math.min(startX,endX)-4,y-7,Math.abs(endX-startX)+8,14);h.style.cursor='pointer';
+     sm[id]='neutral';
+     const fn=()=>{const next=cs(id);sm[id]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb(`${labels[i]} ${side}`,next);tonErfolgreich();};
+     reg2(id,fn,`${labels[i]} ${side}`);h.addEventListener('click',fn);
+   }
+   // 5. Pfeil: nach unten (Scapula caudal)
+   {const y=SCAP_Y[4];
+    const id=`Scap-${ids[4]}-${side}`;
+    const shaft=mkl(tipX,y,tipX,y+aL-ts);
+    const tip=el('polygon',{points:`${tipX},${y+aL} ${tipX-ts/2},${y+aL-ts} ${tipX+ts/2},${y+aL-ts}`,fill:COL});
+    const h=hit(tipX-7,y-4,14,aL+8);h.style.cursor='pointer';
+    sm[id]='neutral';
+    const fn=()=>{const next=cs(id);sm[id]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb(`Scapula ${side} caudal`,next);tonErfolgreich();};
+    reg2(id,fn,`Scapula ${side} caudal`);h.addEventListener('click',fn);}
+ });
+}
+
+// Sternum — 8-Form zwischen Y1 und Y2 mit 6 Pfeilen
+{const SY=Y1+14,EY=Y2-10;
+ const sCenter=(SY+EY)/2; // Mitte = Übergang Manubrium/Korpus
+ const manuRX=13, manuRY=10; // Manubrium (kleiner)
+ const korpRX=15, korpRY=14; // Korpus (etwas größer)
+ const manuCY=SY+manuRY;
+ const korpCY=manuCY+manuRY+korpRY; // direkt unter Manubrium, sich berührend
+
+ // Manubrium — Achteck (Viereck mit abgeschnittenen Ecken)
+ {const cx=CX,cy=manuCY,w=manuRX,h=manuRY,c=4; // c = Abschrägung
+  const pts=`${cx-w+c},${cy-h} ${cx+w-c},${cy-h} ${cx+w},${cy-h+c} ${cx+w},${cy+h-c} ${cx+w-c},${cy+h} ${cx-w+c},${cy+h} ${cx-w},${cy+h-c} ${cx-w},${cy-h+c}`;
+  el('polygon',{points:pts,fill:COL_BG,stroke:COL,'stroke-width':SW});}
+ // Korpus — Achteck (etwas länger und breiter)
+ {const cx=CX,cy=korpCY,w=korpRX,h=korpRY,c=5;
+  const pts=`${cx-w+c},${cy-h} ${cx+w-c},${cy-h} ${cx+w},${cy-h+c} ${cx+w},${cy+h-c} ${cx+w-c},${cy+h} ${cx-w+c},${cy+h} ${cx-w},${cy+h-c} ${cx-w},${cy-h+c}`;
+  el('polygon',{points:pts,fill:COL_BG,stroke:COL,'stroke-width':SW});}
+
+ // Pfeile: 2 seitlich (groß), 2 oben in Manubrium, 2 unten in Korpus
+ const aL=12,ts=5;
+ ['L','R'].forEach(side=>{
+   const dir=side==='L'?-1:1;
+
+   // 1) Sternum seitlich groß (parallel zum Sternum, vertikal nach oben)
+   {const sx=CX+dir*(Math.max(manuRX,korpRX)+5);
+    const sy=korpCY+korpRY-2, ey=manuCY-manuRY+2;
+    const shaft=mkl(sx,sy,sx,ey+3);
+    const tip=el('polygon',{points:`${sx},${ey} ${sx-ts*0.6},${ey+4} ${sx+ts*0.6},${ey+4}`,fill:COL});
+    sm[`Sternum-${side}`]='neutral';
+    const h=hit(sx-6,ey-2,12,sy-ey+4);h.style.cursor='pointer';
+    const fn=()=>{const next=cs(`Sternum-${side}`);sm[`Sternum-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb(`Sternum Hochstand ${side}`,next);tonErfolgreich();};
+    reg2(`Sternum-${side}`,fn,`Sternum Hochstand ${side}`);h.addEventListener('click',fn);}
+
+   // 2) Manubrium Pfeil nach oben (parallel zum Sternum, innerhalb)
+   {const mx=CX+dir*5, sy=manuCY+manuRY-3, ey=manuCY-manuRY+5;
+    const shaft=mkl(mx,sy,mx,ey+3);
+    const tip=el('polygon',{points:`${mx},${ey} ${mx-ts*0.5},${ey+3} ${mx+ts*0.5},${ey+3}`,fill:COL});
+    const h=hit(mx-5,ey-2,10,sy-ey+4);h.style.cursor='pointer';
+    sm[`Manubrium-${side}`]='neutral';
+    const fn=()=>{const next=cs(`Manubrium-${side}`);sm[`Manubrium-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb(`Manubrium Hochstand ${side}`,next);tonErfolgreich();};
+    reg2(`Manubrium-${side}`,fn,`Manubrium Hochstand ${side}`);h.addEventListener('click',fn);}
+
+   // 3) Korpus Pfeil nach unten (innerhalb Korpus)
+   {const kx=CX+dir*5, sy=korpCY-korpRY+3, ey=korpCY+korpRY-5;
+    const shaft=mkl(kx,sy,kx,ey-3);
+    const tip=el('polygon',{points:`${kx},${ey} ${kx-ts*0.5},${ey-3} ${kx+ts*0.5},${ey-3}`,fill:COL});
+    const h=hit(kx-5,sy-2,10,ey-sy+4);h.style.cursor='pointer';
+    sm[`Korpus-${side}`]='neutral';
+    const fn=()=>{const next=cs(`Korpus-${side}`);sm[`Korpus-${side}`]=next;shaft.setAttribute('stroke',SCOL[next]);tip.setAttribute('fill',SCOL[next]);showSb(`Korpus Tiefstand ${side}`,next);tonErfolgreich();};
+    reg2(`Korpus-${side}`,fn,`Korpus Tiefstand ${side}`);h.addEventListener('click',fn);}
+ });
+}
+
+// SLR - Straight Leg Raise (auf Höhe Knie 1, in Verlängerung Dura-Linie)
+{const slrY=Y3+SAC_T+45;
+ ['L','R'].forEach(side=>{
+   const dirAusen=side==='L'?-1:1;
+   const sx=CX+dirAusen*32;
+   const t=el('text',{x:''+sx,y:''+slrY,'text-anchor':'middle','dominant-baseline':'middle','font-size':10,fill:COL,'data-slr':side});
+   t.style.cursor='pointer';t.textContent='SLR';svg.appendChild(t);
+   sm[`SLR-${side}`]='neutral';
+   const fn=()=>{const next=cs(`SLR-${side}`);sm[`SLR-${side}`]=next;t.setAttribute('fill',SCOL[next]);showSb(`SLR ${side}`,next);tonErfolgreich();};
+   reg2(`SLR-${side}`,fn,`SLR ${side}`);t.addEventListener('click',fn);
+ });
+}
+
+// ─── SPRACHBEGRIFFE ──────────────────────────────────────────────────────────
+const speechMap=[
+  // Tab-Wechsel
+  ['stand','__tab_Stand'],['sitz','__tab_Sitz'],
+  ['rückenlage','__tab_Rück'],['rücken','__tab_Rück'],
+  ['rippe','__tab_Rippe'],['rippen','__tab_Rippe'],
+
+  // E — Kurvatur HWS cranial
+  ['kurvatur hws cranial rechts eingeschränkt','E-R'],['kurvatur hws cranial rechts','E-R'],
+  ['kurvatur hws oberhalb c4 rechts eingeschränkt','E-R'],['kurvatur hws oberhalb c4 rechts','E-R'],
+  ['kurvatur hws cranial links eingeschränkt','E-L'],['kurvatur hws cranial links','E-L'],
+  ['kurvatur hws oberhalb c4 links eingeschränkt','E-L'],['kurvatur hws oberhalb c4 links','E-L'],
+  ['kurvatur hws cranial beidseits eingeschränkt','E-B'],['kurvatur hws cranial beidseits','E-B'],
+  ['kurvatur hws oberhalb c4 beidseits','E-B'],
+
+  // C4
+  ['c4 rechts eingeschränkt','C4-R'],['c4 rechts','C4-R'],
+  ['c4 links eingeschränkt','C4-L'],['c4 links','C4-L'],
+  ['c4 beidseits eingeschränkt','C4-B'],['c4 beidseits','C4-B'],
+
+  // D — Kurvatur HWS caudal
+  ['kurvatur hws caudal rechts eingeschränkt','D-R'],['kurvatur hws caudal rechts','D-R'],
+  ['hws kurvatur unterhalb c4 rechts eingeschränkt','D-R'],['hws kurvatur unterhalb c4 rechts','D-R'],
+  ['kurvatur hws unter c4 rechts','D-R'],
+  ['kurvatur hws caudal links eingeschränkt','D-L'],['kurvatur hws caudal links','D-L'],
+  ['hws kurvatur unterhalb c4 links eingeschränkt','D-L'],['hws kurvatur unterhalb c4 links','D-L'],
+  ['kurvatur hws unter c4 links','D-L'],
+  ['kurvatur hws caudal beidseits eingeschränkt','D-B'],['kurvatur hws caudal beidseits','D-B'],
+  ['hws kurvatur unterhalb c4 beidseits','D-B'],['kurvatur hws unter c4 beidseits','D-B'],
+
+  // C — obere BWS Kurvatur
+  ['kurvatur bws oben rechts eingeschränkt','C-R'],['kurvatur bws oben rechts','C-R'],
+  ['bws kurvatur oben rechts eingeschränkt','C-R'],['bws kurvatur oben rechts','C-R'],
+  ['kurvatur bws oben links eingeschränkt','C-L'],['kurvatur bws oben links','C-L'],
+  ['bws kurvatur oben links eingeschränkt','C-L'],['bws kurvatur oben links','C-L'],
+  ['kurvatur bws oben beidseits eingeschränkt','C-B'],['kurvatur bws oben beidseits','C-B'],
+  ['bws kurvatur oben beidseits','C-B'],
+
+  // B — untere BWS Kurvatur
+  ['kurvatur bws unten rechts eingeschränkt','B-R'],['kurvatur bws unten rechts','B-R'],
+  ['bws kurvatur unten rechts eingeschränkt','B-R'],['bws kurvatur unten rechts','B-R'],
+  ['kurvatur bws unten links eingeschränkt','B-L'],['kurvatur bws unten links','B-L'],
+  ['bws kurvatur unten links eingeschränkt','B-L'],['bws kurvatur unten links','B-L'],
+  ['kurvatur bws unten beidseits eingeschränkt','B-B'],['kurvatur bws unten beidseits','B-B'],
+  ['bws kurvatur unten beidseits','B-B'],
+
+  // A — obere LWS Kurvatur
+  ['kurvatur lws oben rechts eingeschränkt','A-R'],['kurvatur lws oben rechts','A-R'],
+  ['lws kurvatur oben rechts eingeschränkt','A-R'],['lws kurvatur oben rechts','A-R'],
+  ['kurvatur lws oben links eingeschränkt','A-L'],['kurvatur lws oben links','A-L'],
+  ['lws kurvatur oben links eingeschränkt','A-L'],['lws kurvatur oben links','A-L'],
+  ['kurvatur lws oben beidseits eingeschränkt','A-B'],['kurvatur lws oben beidseits','A-B'],
+  ['lws kurvatur oben beidseits','A-B'],
+
+  // O — untere LWS Kurvatur
+  ['kurvatur lws unten rechts eingeschränkt','O-R'],['kurvatur lws unten rechts','O-R'],
+  ['lws kurvatur unten rechts eingeschränkt','O-R'],['lws kurvatur unten rechts','O-R'],
+  ['kurvatur lws unten links eingeschränkt','O-L'],['kurvatur lws unten links','O-L'],
+  ['lws kurvatur unten links eingeschränkt','O-L'],['lws kurvatur unten links','O-L'],
+  ['kurvatur lws unten beidseits eingeschränkt','O-B'],['kurvatur lws unten beidseits','O-B'],
+  ['lws kurvatur unten beidseits','O-B'],
+
+  // CV — Kurvatur Coccyx
+  ['kurvatur coccyx rechts eingeschränkt','CV-R'],['kurvatur coccyx rechts','CV-R'],
+  ['coccyx kurvatur rechts','CV-R'],['kurvatur steißbein rechts','CV-R'],
+  ['kurvatur coccyx links eingeschränkt','CV-L'],['kurvatur coccyx links','CV-L'],
+  ['coccyx kurvatur links','CV-L'],['kurvatur steißbein links','CV-L'],
+  ['kurvatur coccyx beidseits eingeschränkt','CV-B'],['kurvatur coccyx beidseits','CV-B'],
+  ['coccyx kurvatur beidseits','CV-B'],['kurvatur steißbein beidseits','CV-B'],
+
+  // Meckel
+  ['meckel rechts','Meckel-R'],['meckel knorpel rechts','Meckel-R'],['zygoma rechts','Meckel-R'],['zygoma kompression rechts','Meckel-R'],
+  ['meckel links','Meckel-L'],['meckel knorpel links','Meckel-L'],['zygoma links','Meckel-L'],['zygoma kompression links','Meckel-L'],
+  ['meckel beidseits','Meckel-B'],['meckel knorpel beidseits','Meckel-B'],['zygoma beidseits','Meckel-B'],['zygoma kompression beidseits','Meckel-B'],
+
+  // Condylen
+  ['condyle rechts anterior','Condyle-R-A'],['rechte condyle anterior','Condyle-R-A'],
+  ['condyle anterior rechts','Condyle-R-A'],
+  ['condyle links anterior','Condyle-L-A'],['linke condyle anterior','Condyle-L-A'],
+  ['condyle anterior links','Condyle-L-A'],
+  ['beide condylen anterior','Condyle-B-A'],['condylen beidseits anterior','Condyle-B-A'],
+  ['condyle rechts posterior','Condyle-R-P'],['rechte condyle posterior','Condyle-R-P'],
+  ['condyle posterior rechts','Condyle-R-P'],
+  ['condyle links posterior','Condyle-L-P'],['linke condyle posterior','Condyle-L-P'],
+  ['condyle posterior links','Condyle-L-P'],
+  ['beide condylen posterior','Condyle-B-P'],['condylen beidseits posterior','Condyle-B-P'],
+
+  // Hüfte E - Extension
+  ['extensionseinschränkung rechte hüfte','Hueft-E-R'],['extension hüfte rechts','Hueft-E-R'],
+  ['extension hüfte rechts eingeschränkt','Hueft-E-R'],['rechte hüfte in extension eingeschränkt','Hueft-E-R'],
+  ['extensionseinschränkung linke hüfte','Hueft-E-L'],['extension hüfte links','Hueft-E-L'],
+  ['extension hüfte links eingeschränkt','Hueft-E-L'],['linke hüfte in extension eingeschränkt','Hueft-E-L'],
+
+  // Hüfte F - Flexion
+  ['flexionseinschränkung rechte hüfte','Hueft-F-R'],['flexion hüfte rechts','Hueft-F-R'],
+  ['flexion hüfte rechts eingeschränkt','Hueft-F-R'],['rechte hüfte in flexion eingeschränkt','Hueft-F-R'],
+  ['flexionseinschränkung linke hüfte','Hueft-F-L'],['flexion hüfte links','Hueft-F-L'],
+  ['flexion hüfte links eingeschränkt','Hueft-F-L'],['linke hüfte in flexion eingeschränkt','Hueft-F-L'],
+
+  // Hüfte I - Hyperabduktion Nullstellung
+  ['hüfte 1 rechts','Hueft-I-R'],['hüfte 1 rechts eingeschränkt','Hueft-I-R'],
+  ['hyperabduktion rechts eingeschränkt','Hueft-I-R'],['hyperabduktion hüfte rechts','Hueft-I-R'],
+  ['hüfte 1 links','Hueft-I-L'],['hüfte 1 links eingeschränkt','Hueft-I-L'],
+  ['hyperabduktion links eingeschränkt','Hueft-I-L'],['hyperabduktion hüfte links','Hueft-I-L'],
+
+  // Hüfte II - Abduktion in 90° Flexion
+  ['hüfte 2 rechts','Hueft-II-R'],['hüfte 2 rechts eingeschränkt','Hueft-II-R'],
+  ['abduktion hüfte 2 rechts','Hueft-II-R'],['abduktion hüfte 2 rechts eingeschränkt','Hueft-II-R'],
+  ['hüfte 2 links','Hueft-II-L'],['hüfte 2 links eingeschränkt','Hueft-II-L'],
+  ['abduktion hüfte 2 links','Hueft-II-L'],['abduktion hüfte 2 links eingeschränkt','Hueft-II-L'],
+
+  // Hüfte III - Adduktion in 90°
+  ['hüfte 3 rechts','Hueft-III-R'],['hüfte 3 rechts eingeschränkt','Hueft-III-R'],
+  ['adduktion hüfte 3 rechts','Hueft-III-R'],['adduktion hüfte 90 grad rechts','Hueft-III-R'],
+  ['hüfte 3 links','Hueft-III-L'],['hüfte 3 links eingeschränkt','Hueft-III-L'],
+  ['adduktion hüfte 3 links','Hueft-III-L'],['adduktion hüfte 90 grad links','Hueft-III-L'],
+
+  // Hüfte IV - Adduktion in 120°
+  ['hüfte 4 rechts','Hueft-IV-R'],['hüfte 4 rechts eingeschränkt','Hueft-IV-R'],
+  ['adduktion hüfte 4 rechts','Hueft-IV-R'],['adduktion hüfte 120 grad rechts','Hueft-IV-R'],
+  ['hüfte 4 links','Hueft-IV-L'],['hüfte 4 links eingeschränkt','Hueft-IV-L'],
+  ['adduktion hüfte 4 links','Hueft-IV-L'],['adduktion hüfte 120 grad links','Hueft-IV-L'],
+
+  // Dorsalextension Fuß (DE)
+  ['dorsalextension rechter fuß eingeschränkt','DorsExt-R'],['dorsalextension rechter fuß','DorsExt-R'],
+  ['extension fuß rechts eingeschränkt','DorsExt-R'],['extension rechter fuß','DorsExt-R'],
+  ['de rechts','DorsExt-R'],['dorsalextension fuß rechts','DorsExt-R'],
+  ['dorsalextension linker fuß eingeschränkt','DorsExt-L'],['dorsalextension linker fuß','DorsExt-L'],
+  ['extension fuß links eingeschränkt','DorsExt-L'],['extension linker fuß','DorsExt-L'],
+  ['de links','DorsExt-L'],['dorsalextension fuß links','DorsExt-L'],
+
+  // Chorda Cranial (Pfeil nach unten)
+  ['chorda nicht cranial rechts','ChordaDownArrow-R'],['chorda nicht cranial links','ChordaDownArrow-L'],
+  ['chorda hs rechts cranial','ChordaC-HS-R'],['chorda hiatus sacralis rechts cranial','ChordaC-HS-R'],
+  ['chorda hs links cranial','ChordaC-HS-L'],['chorda hiatus sacralis links cranial','ChordaC-HS-L'],
+  ['chorda sacrum rechts cranial','ChordaC-S-R'],['chorda s rechts cranial','ChordaC-S-R'],
+  ['chorda sacrum links cranial','ChordaC-S-L'],['chorda s links cranial','ChordaC-S-L'],
+  ['chorda lws rechts cranial','ChordaC-L-R'],['chorda l rechts cranial','ChordaC-L-R'],
+  ['chorda lws links cranial','ChordaC-L-L'],['chorda l links cranial','ChordaC-L-L'],
+  ['chorda bws rechts cranial','ChordaC-B-R'],['chorda b rechts cranial','ChordaC-B-R'],
+  ['chorda bws links cranial','ChordaC-B-L'],['chorda b links cranial','ChordaC-B-L'],
+  ['chorda hws rechts cranial','ChordaC-H-R'],['chorda h rechts cranial','ChordaC-H-R'],
+  ['chorda hws links cranial','ChordaC-H-L'],['chorda h links cranial','ChordaC-H-L'],
+  ['chorda rm rechts cranial','ChordaC-RM-R'],['chorda mesencephalon rechts cranial','ChordaC-RM-R'],
+  ['chorda rm links cranial','ChordaC-RM-L'],['chorda mesencephalon links cranial','ChordaC-RM-L'],
+
+  // Chorda Caudal (Pfeil nach oben)
+  ['chorda nicht caudal rechts','ChordaUpArrow-R'],['chorda nicht caudal links','ChordaUpArrow-L'],
+  ['chorda hs rechts caudal','ChordaCau-HS-R'],['chorda hiatus sacralis rechts caudal','ChordaCau-HS-R'],
+  ['chorda hs links caudal','ChordaCau-HS-L'],['chorda hiatus sacralis links caudal','ChordaCau-HS-L'],
+  ['chorda sacrum rechts caudal','ChordaCau-S-R'],['chorda s rechts caudal','ChordaCau-S-R'],
+  ['chorda sacrum links caudal','ChordaCau-S-L'],['chorda s links caudal','ChordaCau-S-L'],
+  ['chorda lws rechts caudal','ChordaCau-L-R'],['chorda l rechts caudal','ChordaCau-L-R'],
+  ['chorda lws links caudal','ChordaCau-L-L'],['chorda l links caudal','ChordaCau-L-L'],
+  ['chorda bws rechts caudal','ChordaCau-B-R'],['chorda b rechts caudal','ChordaCau-B-R'],
+  ['chorda bws links caudal','ChordaCau-B-L'],['chorda b links caudal','ChordaCau-B-L'],
+  ['chorda hws rechts caudal','ChordaCau-H-R'],['chorda h rechts caudal','ChordaCau-H-R'],
+  ['chorda hws links caudal','ChordaCau-H-L'],['chorda h links caudal','ChordaCau-H-L'],
+  ['chorda rm rechts caudal','ChordaCau-RM-R'],['chorda mesencephalon rechts caudal','ChordaCau-RM-R'],
+  ['chorda rm links caudal','ChordaCau-RM-L'],['chorda mesencephalon links caudal','ChordaCau-RM-L'],
+
+  // Chorda
+  ['chorda rechts','Chorda-R'],['chordatest rechts','Chorda-R'],['chorda rechts positiv','Chorda-R'],
+  ['chorda links','Chorda-L'],['chordatest links','Chorda-L'],['chorda links positiv','Chorda-L'],
+
+  // Plantarflexion Fuß (PLF)
+  ['plantarflexion rechts eingeschränkt','PlantFl-R'],['plantarflexion rechter fuß','PlantFl-R'],
+  ['flexion fuß rechts eingeschränkt','PlantFl-R'],['flexion rechter fuß','PlantFl-R'],
+  ['plf rechts','PlantFl-R'],['plantarflexion rechts','PlantFl-R'],
+  ['plantarflexion links eingeschränkt','PlantFl-L'],['plantarflexion linker fuß','PlantFl-L'],
+  ['flexion fuß links eingeschränkt','PlantFl-L'],['flexion linker fuß','PlantFl-L'],
+  ['plf links','PlantFl-L'],['plantarflexion links','PlantFl-L'],
+
+  // Sprunggelenk
+  ['kompression sprunggelenk rechts','Fuss-R'],['talus fixation rechts','Fuss-R'],['spreizung rechtes sprunggelenk','Fuss-R'],
+  ['kompression sprunggelenk links','Fuss-L'],['talus fixation links','Fuss-L'],['spreizung linkes sprunggelenk','Fuss-L'],
+
+  // Nierenzone
+  ['nierenzone rechts','Niere-R'],['niere rechts','Niere-R'],['zone von grynfeltt rechts','Niere-R'],['zone von grynfeltt rechts positiv','Niere-R'],
+  ['nierenzone links','Niere-L'],['niere links','Niere-L'],['zone von grynfeltt links','Niere-L'],['zone von grynfeltt links positiv','Niere-L'],
+
+  // Knie 1/2 Außenrotation (Pfeil nach innen)
+  ['knie außenrotation 1 rechts eingeschränkt','Knie1-AR-R'],['außenrotation unterschenkel rechts 1. position eingeschränkt','Knie1-AR-R'],
+  ['außenrotation rechts knie 1. position eingeschränkt','Knie1-AR-R'],['außenrotation knie 1 rechts','Knie1-AR-R'],
+  ['knie außenrotation 1 links eingeschränkt','Knie1-AR-L'],['außenrotation unterschenkel links 1. position eingeschränkt','Knie1-AR-L'],
+  ['außenrotation links knie 1. position eingeschränkt','Knie1-AR-L'],['außenrotation knie 1 links','Knie1-AR-L'],
+  ['knie außenrotation 2 rechts eingeschränkt','Knie2-AR-R'],['außenrotation unterschenkel rechts 2. position eingeschränkt','Knie2-AR-R'],
+  ['außenrotation rechts knie 2. position eingeschränkt','Knie2-AR-R'],['außenrotation knie 2 rechts','Knie2-AR-R'],
+  ['knie außenrotation 2 links eingeschränkt','Knie2-AR-L'],['außenrotation unterschenkel links 2. position eingeschränkt','Knie2-AR-L'],
+  ['außenrotation links knie 2. position eingeschränkt','Knie2-AR-L'],['außenrotation knie 2 links','Knie2-AR-L'],
+  ['knie außenrotation 3 rechts eingeschränkt','Knie3-AR-R'],['außenrotation unterschenkel rechts 3. position eingeschränkt','Knie3-AR-R'],
+  ['außenrotation rechts knie 3. position eingeschränkt','Knie3-AR-R'],['außenrotation knie 3 rechts','Knie3-AR-R'],
+  ['knie außenrotation 3 links eingeschränkt','Knie3-AR-L'],['außenrotation unterschenkel links 3. position eingeschränkt','Knie3-AR-L'],
+  ['außenrotation links knie 3. position eingeschränkt','Knie3-AR-L'],['außenrotation knie 3 links','Knie3-AR-L'],
+
+  // Knie 1/2 Innenrotation (Pfeil nach außen)
+  ['knie innenrotation 1 rechts eingeschränkt','Knie1-IR-R'],['innenrotation unterschenkel rechts 1. position eingeschränkt','Knie1-IR-R'],
+  ['innenrotation rechts knie 1. position eingeschränkt','Knie1-IR-R'],['innenrotation knie 1 rechts','Knie1-IR-R'],
+  ['knie innenrotation 1 links eingeschränkt','Knie1-IR-L'],['innenrotation unterschenkel links 1. position eingeschränkt','Knie1-IR-L'],
+  ['innenrotation links knie 1. position eingeschränkt','Knie1-IR-L'],['innenrotation knie 1 links','Knie1-IR-L'],
+  ['knie innenrotation 2 rechts eingeschränkt','Knie2-IR-R'],['innenrotation unterschenkel rechts 2. position eingeschränkt','Knie2-IR-R'],
+  ['innenrotation rechts knie 2. position eingeschränkt','Knie2-IR-R'],['innenrotation knie 2 rechts','Knie2-IR-R'],
+  ['knie innenrotation 2 links eingeschränkt','Knie2-IR-L'],['innenrotation unterschenkel links 2. position eingeschränkt','Knie2-IR-L'],
+  ['innenrotation links knie 2. position eingeschränkt','Knie2-IR-L'],['innenrotation knie 2 links','Knie2-IR-L'],
+  ['knie innenrotation 3 rechts eingeschränkt','Knie3-IR-R'],['innenrotation unterschenkel rechts 3. position eingeschränkt','Knie3-IR-R'],
+  ['innenrotation rechts knie 3. position eingeschränkt','Knie3-IR-R'],['innenrotation knie 3 rechts','Knie3-IR-R'],
+  ['knie innenrotation 3 links eingeschränkt','Knie3-IR-L'],['innenrotation unterschenkel links 3. position eingeschränkt','Knie3-IR-L'],
+  ['innenrotation links knie 3. position eingeschränkt','Knie3-IR-L'],['innenrotation knie 3 links','Knie3-IR-L'],
+
+  // Knie Extension
+  ['extensionseinschränkung rechtes knie','KnieExt-R'],['rechtes knie in extension eingeschränkt','KnieExt-R'],
+  ['knieextension rechts','KnieExt-R'],['extension rechtes knie','KnieExt-R'],
+  ['extensionseinschränkung linkes knie','KnieExt-L'],['linkes knie in extension eingeschränkt','KnieExt-L'],
+  ['knieextension links','KnieExt-L'],['extension linkes knie','KnieExt-L'],
+
+  // Knie Flexion
+  ['flexionseinschränkung rechtes knie','KnieFlex-R'],['rechtes knie in flexion eingeschränkt','KnieFlex-R'],
+  ['knieflexion rechts','KnieFlex-R'],['flexion rechtes knie','KnieFlex-R'],
+  ['flexionseinschränkung linkes knie','KnieFlex-L'],['linkes knie in flexion eingeschränkt','KnieFlex-L'],
+  ['knieflexion links','KnieFlex-L'],['flexion linkes knie','KnieFlex-L'],
+
+  // Hüft-Rotation IR L (lang)
+  ['hüfte rechts in innenrotation eingeschränkt','HuefIRL-R'],['hüfte rechts innenrotationseinschränkung','HuefIRL-R'],
+  ['innenrotation rechte hüfte','HuefIRL-R'],['innenrotation hüfte rechts','HuefIRL-R'],
+  ['innenrotation lang rechts','HuefIRL-R'],['ir lang rechts','HuefIRL-R'],
+  ['hüfte links in innenrotation eingeschränkt','HuefIRL-L'],['hüfte links innenrotationseinschränkung','HuefIRL-L'],
+  ['innenrotation linke hüfte','HuefIRL-L'],['innenrotation hüfte links','HuefIRL-L'],
+  ['innenrotation lang links','HuefIRL-L'],['ir lang links','HuefIRL-L'],
+
+  // Hüft-Rotation AR L (lang)
+  ['hüfte rechts in außenrotation eingeschränkt','HuefARL-R'],['hüfte rechts außenrotationseinschränkung','HuefARL-R'],
+  ['außenrotation rechte hüfte','HuefARL-R'],['außenrotation hüfte rechts','HuefARL-R'],
+  ['außenrotation lang rechts','HuefARL-R'],['ar lang rechts','HuefARL-R'],
+  ['hüfte links in außenrotation eingeschränkt','HuefARL-L'],['hüfte links außenrotationseinschränkung','HuefARL-L'],
+  ['außenrotation linke hüfte','HuefARL-L'],['außenrotation hüfte links','HuefARL-L'],
+  ['außenrotation lang links','HuefARL-L'],['ar lang links','HuefARL-L'],
+
+  // Hüft-Rotation IR K (kurz)
+  ['innenrotation kurz rechte hüfte eingeschränkt','HuefIRK-R'],['innenrotation rechte hüfte kurz eingeschränkt','HuefIRK-R'],
+  ['hüfte rechts kurz in innenrotation eingeschränkt','HuefIRK-R'],['kurze innenrotation rechts eingeschränkt','HuefIRK-R'],
+  ['innenrotation kurz rechts','HuefIRK-R'],['ir kurz rechts','HuefIRK-R'],
+  ['innenrotation kurz linke hüfte eingeschränkt','HuefIRK-L'],['innenrotation linke hüfte kurz eingeschränkt','HuefIRK-L'],
+  ['hüfte links kurz in innenrotation eingeschränkt','HuefIRK-L'],['kurze innenrotation links eingeschränkt','HuefIRK-L'],
+  ['innenrotation kurz links','HuefIRK-L'],['ir kurz links','HuefIRK-L'],
+
+  // Hüft-Rotation AR K (kurz)
+  ['außenrotation kurz rechte hüfte eingeschränkt','HuefARK-R'],['außenrotation rechte hüfte kurz eingeschränkt','HuefARK-R'],
+  ['hüfte rechts kurz in außenrotation eingeschränkt','HuefARK-R'],['kurze außenrotation rechts eingeschränkt','HuefARK-R'],
+  ['außenrotation kurz rechts','HuefARK-R'],['ar kurz rechts','HuefARK-R'],
+  ['außenrotation kurz linke hüfte eingeschränkt','HuefARK-L'],['außenrotation linke hüfte kurz eingeschränkt','HuefARK-L'],
+  ['hüfte links kurz in außenrotation eingeschränkt','HuefARK-L'],['kurze außenrotation links eingeschränkt','HuefARK-L'],
+  ['außenrotation kurz links','HuefARK-L'],['ar kurz links','HuefARK-L'],
+
+  // Sternum
+  ['sternum hochstand rechts','Sternum-R'],['sternum steht rechts cranial','Sternum-R'],['sternum rechts cranial','Sternum-R'],
+  ['sternum hochstand links','Sternum-L'],['sternum steht links cranial','Sternum-L'],['sternum links cranial','Sternum-L'],
+
+  // Manubrium
+  ['manubrium rechts hochstand','Manubrium-R'],['rechtes manubrium steht cranial','Manubrium-R'],['rechtes manubrium cranial','Manubrium-R'],
+  ['manubrium links hochstand','Manubrium-L'],['linkes manubrium steht cranial','Manubrium-L'],['linkes manubrium cranial','Manubrium-L'],
+
+  // Korpus Sternum
+  ['korpus tiefstand rechts','Korpus-R'],['rechter korpus vom sternum steht tief','Korpus-R'],['korpus sternum rechts caudal','Korpus-R'],
+  ['korpus tiefstand links','Korpus-L'],['linker korpus vom sternum steht tief','Korpus-L'],['korpus sternum links caudal','Korpus-L'],
+
+  // Schulterblatt — Rachen/Kehle (oberster Pfeil)
+  ['kehle rechts','Scap-Rachen-R'],['rachen rechts','Scap-Rachen-R'],['rachen','Scap-Rachen-R'],
+  ['kehle links','Scap-Rachen-L'],['rachen links','Scap-Rachen-L'],
+  // Trachea (Höhe Spina scapulae)
+  ['trachea rechts','Scap-Trachea-R'],['luftröhre rechts','Scap-Trachea-R'],
+  ['trachea links','Scap-Trachea-L'],['luftröhre links','Scap-Trachea-L'],
+  // Ösophagus / Margo mediale
+  ['ösophagus rechts','Scap-Oesoph-R'],['scapula margo mediale rechts','Scap-Oesoph-R'],['margo mediale rechts','Scap-Oesoph-R'],
+  ['ösophagus links','Scap-Oesoph-L'],['scapula margo mediale links','Scap-Oesoph-L'],['margo mediale links','Scap-Oesoph-L'],
+  // Leber / Angulus inferior medial
+  ['leber rechts','Scap-Leber-R'],['rechter leberlappen','Scap-Leber-R'],['angulus inferior medial rechts','Scap-Leber-R'],
+  ['leber links','Scap-Leber-L'],['linker leberlappen','Scap-Leber-L'],['angulus inferior medial links','Scap-Leber-L'],
+  // Scapula caudal
+  ['scapula rechts caudal','Scap-ScapCaudal-R'],['scapula caudal rechts','Scap-ScapCaudal-R'],
+  ['scapula links caudal','Scap-ScapCaudal-L'],['scapula caudal links','Scap-ScapCaudal-L'],
+
+  // 4. Rippe
+  ['vierte rippe rechts','Rippe4-R'],['4. rippe rechts','Rippe4-R'],['4 rippe rechts','Rippe4-R'],
+  ['vierte rippe rechts positiv','Rippe4-R'],['vierte rippe rechts eingeschränkt','Rippe4-R'],
+  ['vierte rippe links','Rippe4-L'],['4. rippe links','Rippe4-L'],['4 rippe links','Rippe4-L'],
+  ['vierte rippe links positiv','Rippe4-L'],['vierte rippe links eingeschränkt','Rippe4-L'],
+
+  // Cubiti Extension
+  ['extensionseinschränkung cubiti rechts','CubExt-R'],['extensionseinschränkung ellenbogen rechts','CubExt-R'],
+  ['cubiti ex rechts','CubExt-R'],['einschränkung rechter ellenbogen in extension','CubExt-R'],
+  ['extension cubiti rechts','CubExt-R'],
+  ['extensionseinschränkung cubiti links','CubExt-L'],['extensionseinschränkung ellenbogen links','CubExt-L'],
+  ['cubiti ex links','CubExt-L'],['einschränkung linker ellenbogen in extension','CubExt-L'],
+  ['extension cubiti links','CubExt-L'],
+
+  // Cubiti Flexion
+  ['flexionseinschränkung cubiti rechts','CubFlex-R'],['flexionseinschränkung ellenbogen rechts','CubFlex-R'],
+  ['cubiti flex rechts','CubFlex-R'],['einschränkung rechter ellenbogen in flexion','CubFlex-R'],
+  ['flexion cubiti rechts','CubFlex-R'],
+  ['flexionseinschränkung cubiti links','CubFlex-L'],['flexionseinschränkung ellenbogen links','CubFlex-L'],
+  ['cubiti flex links','CubFlex-L'],['einschränkung linker ellenbogen in flexion','CubFlex-L'],
+  ['flexion cubiti links','CubFlex-L'],
+
+  // Supination
+  ['supination rechts eingeschränkt','Sup-R'],['supination rechts','Sup-R'],
+  ['supination rechter unterarm eingeschränkt','Sup-R'],['supination rechter ellenbogen','Sup-R'],
+  ['supinationseinschränkung rechts','Sup-R'],
+  ['supination links eingeschränkt','Sup-L'],['supination links','Sup-L'],
+  ['supination linker unterarm eingeschränkt','Sup-L'],['supination linker ellenbogen','Sup-L'],
+  ['supinationseinschränkung links','Sup-L'],
+
+  // Pronation
+  ['pronation rechts eingeschränkt','Pron-R'],['pronation rechts','Pron-R'],
+  ['pronation rechter unterarm eingeschränkt','Pron-R'],['pronation rechter ellenbogen','Pron-R'],
+  ['pronationseinschränkung rechts','Pron-R'],
+  ['pronation links eingeschränkt','Pron-L'],['pronation links','Pron-L'],
+  ['pronation linker unterarm eingeschränkt','Pron-L'],['pronation linker ellenbogen','Pron-L'],
+  ['pronationseinschränkung links','Pron-L'],
+
+  // Palmarextension
+  ['extension rechtes handgelenk','PalmEx-R'],['extensionseinschränkung rechtes handgelenk','PalmEx-R'],
+  ['handgelenk rechts in extension eingeschränkt','PalmEx-R'],['pe rechts','PalmEx-R'],
+  ['palmarextension rechts','PalmEx-R'],
+  ['extension linkes handgelenk','PalmEx-L'],['extensionseinschränkung linkes handgelenk','PalmEx-L'],
+  ['handgelenk links in extension eingeschränkt','PalmEx-L'],['pe links','PalmEx-L'],
+  ['palmarextension links','PalmEx-L'],
+
+  // Palmarflexion
+  ['flexion rechtes handgelenk','PalmFl-R'],['flexionseinschränkung rechtes handgelenk','PalmFl-R'],
+  ['handgelenk rechts in flexion eingeschränkt','PalmFl-R'],['pf rechts','PalmFl-R'],
+  ['palmarflexion rechts','PalmFl-R'],
+  ['flexion linkes handgelenk','PalmFl-L'],['flexionseinschränkung linkes handgelenk','PalmFl-L'],
+  ['handgelenk links in flexion eingeschränkt','PalmFl-L'],['pf links','PalmFl-L'],
+  ['palmarflexion links','PalmFl-L'],
+
+  // Supination
+  ['supination rechts eingeschränkt','Sup-R'],['supination rechts','Sup-R'],
+  ['supination rechter unterarm eingeschränkt','Sup-R'],['supination rechter ellenbogen','Sup-R'],
+  ['supinationseinschränkung rechts','Sup-R'],
+  ['supination links eingeschränkt','Sup-L'],['supination links','Sup-L'],
+  ['supination linker unterarm eingeschränkt','Sup-L'],['supination linker ellenbogen','Sup-L'],
+  ['supinationseinschränkung links','Sup-L'],
+
+  // Pronation
+  ['pronation rechts eingeschränkt','Pron-R'],['pronation rechts','Pron-R'],
+  ['pronation rechter unterarm eingeschränkt','Pron-R'],['pronation rechter ellenbogen','Pron-R'],
+  ['pronationseinschränkung rechts','Pron-R'],
+  ['pronation links eingeschränkt','Pron-L'],['pronation links','Pron-L'],
+  ['pronation linker unterarm eingeschränkt','Pron-L'],['pronation linker ellenbogen','Pron-L'],
+  ['pronationseinschränkung links','Pron-L'],
+
+  // Palmarextension
+  ['extension rechtes handgelenk','PalmEx-R'],['extensionseinschränkung rechtes handgelenk','PalmEx-R'],
+  ['handgelenk rechts in extension eingeschränkt','PalmEx-R'],['pe rechts','PalmEx-R'],
+  ['palmarextension rechts','PalmEx-R'],
+  ['extension linkes handgelenk','PalmEx-L'],['extensionseinschränkung linkes handgelenk','PalmEx-L'],
+  ['handgelenk links in extension eingeschränkt','PalmEx-L'],['pe links','PalmEx-L'],
+  ['palmarextension links','PalmEx-L'],
+
+  // Palmarflexion
+  ['flexion rechtes handgelenk','PalmFl-R'],['flexionseinschränkung rechtes handgelenk','PalmFl-R'],
+  ['handgelenk rechts in flexion eingeschränkt','PalmFl-R'],['pf rechts','PalmFl-R'],
+  ['palmarflexion rechts','PalmFl-R'],
+  ['flexion linkes handgelenk','PalmFl-L'],['flexionseinschränkung linkes handgelenk','PalmFl-L'],
+  ['handgelenk links in flexion eingeschränkt','PalmFl-L'],['pf links','PalmFl-L'],
+  ['palmarflexion links','PalmFl-L'],
+
+  // Hohe Adduktion
+  ['hohe adduktion schulter rechts','RL-HochAdd-R'],['hohe adduktion rechte schulter','RL-HochAdd-R'],
+  ['hohe adduktion rechts eingeschränkt','RL-HochAdd-R'],['hohe adduktion rechts','RL-HochAdd-R'],
+  ['hohe adduktion schulter rechts eingeschränkt','RL-HochAdd-R'],
+  ['hohe adduktion schulter links','RL-HochAdd-L'],['hohe adduktion linke schulter','RL-HochAdd-L'],
+  ['hohe adduktion links eingeschränkt','RL-HochAdd-L'],['hohe adduktion links','RL-HochAdd-L'],
+  ['hohe adduktion schulter links eingeschränkt','RL-HochAdd-L'],
+
+  // SG1 Hyperabduktion cranial
+  ['hyperabduktion cranial rechts','RL-SG1-R'],['sg1 rechts','RL-SG1-R'],
+  ['hyperabduktion rechte schulter cranial','RL-SG1-R'],['hyperabduktionseinschränkung rechte schulter cranial','RL-SG1-R'],
+  ['hyperabduktion schulter cranial rechts','RL-SG1-R'],
+  ['hyperabduktion cranial links','RL-SG1-L'],['sg1 links','RL-SG1-L'],
+  ['hyperabduktion linke schulter cranial','RL-SG1-L'],['hyperabduktionseinschränkung linke schulter cranial','RL-SG1-L'],
+  ['hyperabduktion schulter cranial links','RL-SG1-L'],
+
+  // SG2 Hyperabduktion medial / 90°
+  ['hyperabduktion medial rechts','RL-SG2-R'],['sg2 medial rechts','RL-SG2-R'],['sg2 rechts','RL-SG2-R'],
+  ['hyperabduktion 90 grad rechts','RL-SG2-R'],['hyperabduktionseinschränkung rechte schulter 90 grad','RL-SG2-R'],
+  ['hyperabduktion rechte schulter 90 grad','RL-SG2-R'],['hyperabduktion schulter rechts in 90 grad','RL-SG2-R'],
+  ['hyperabduktion medial links','RL-SG2-L'],['sg2 medial links','RL-SG2-L'],['sg2 links','RL-SG2-L'],
+  ['hyperabduktion 90 grad links','RL-SG2-L'],['hyperabduktionseinschränkung linke schulter 90 grad','RL-SG2-L'],
+  ['hyperabduktion linke schulter 90 grad','RL-SG2-L'],['hyperabduktion schulter links in 90 grad','RL-SG2-L'],
+
+  // SG3 Hyperabduktion caudal
+  ['hyperabduktion caudal rechts','RL-SG3-R'],['sg3 caudal rechts','RL-SG3-R'],['sg3 rechts','RL-SG3-R'],
+  ['hyperabduktion rechte schulter caudal','RL-SG3-R'],['hyperabduktionseinschränkung rechte schulter caudal','RL-SG3-R'],
+  ['hyperabduktion schulter caudal rechts','RL-SG3-R'],
+  ['hyperabduktion caudal links','RL-SG3-L'],['sg3 caudal links','RL-SG3-L'],['sg3 links','RL-SG3-L'],
+  ['hyperabduktion linke schulter caudal','RL-SG3-L'],['hyperabduktionseinschränkung linke schulter caudal','RL-SG3-L'],
+  ['hyperabduktion schulter caudal links','RL-SG3-L'],
+
+  // Schulter RL
+  ['flexion schulter rechts rl','RL-F-R'],['flexion rechte schulter rückenlage','RL-F-R'],['flexion schulter rechts','RL-F-R'],
+  ['flexion schulter links rl','RL-F-L'],['flexion linke schulter rückenlage','RL-F-L'],['flexion schulter links','RL-F-L'],
+  ['abduktion schulter rechts rl','RL-ABD-R'],['abduktionseinschränkung rechte schulter','RL-ABD-R'],
+  ['abduktion rechte schulter eingeschränkt','RL-ABD-R'],['abduktion rechte schulter rückenlage','RL-ABD-R'],
+  ['abduktion rechte schulter','RL-ABD-R'],
+  ['abduktion rechts schulter eingeschränkt','RL-ABD-R'],['abduktion schulter rechts eingeschränkt','RL-ABD-R'],
+  ['abduktion schulter links rl','RL-ABD-L'],['abduktionseinschränkung linke schulter','RL-ABD-L'],
+  ['abduktion linke schulter eingeschränkt','RL-ABD-L'],['abduktion linke schulter rückenlage','RL-ABD-L'],
+  ['abduktion linke schulter','RL-ABD-L'],
+  ['abduktion links schulter eingeschränkt','RL-ABD-L'],['abduktion schulter links eingeschränkt','RL-ABD-L'],
+  ['außenrotation 90 grad schulter rechts rl','RL-AR-R'],['außenrotation schulter rechts rückenlage','RL-AR-R'],
+  ['außenrotation 90 grad schulter links rl','RL-AR-L'],['außenrotation schulter links rückenlage','RL-AR-L'],
+  ['innenrotation 90 grad schulter rechts rl','RL-IR-R'],['innenrotation schulter rechts rückenlage','RL-IR-R'],
+  ['innenrotation 90 grad schulter links rl','RL-IR-L'],['innenrotation schulter links rückenlage','RL-IR-L'],
+  ['außenrotation nullstellung schulter rechts rl','RL-AR0-R'],['außenrotation arm rechts rückenlage','RL-AR0-R'],
+  ['außenrotation nullstellung schulter links rl','RL-AR0-L'],['außenrotation arm links rückenlage','RL-AR0-L'],
+
+  // Traktion Schulter
+  ['traktion schulter rechts','RL-Trakt-R'],['traktion rechte schulter','RL-Trakt-R'],['traktion arm rechts','RL-Trakt-R'],
+  ['traktion schulter links','RL-Trakt-L'],['traktion linke schulter','RL-Trakt-L'],['traktion arm links','RL-Trakt-L'],
+  ['traktion rechts eingeschränkt','RL-Trakt-R'],['traktion links eingeschränkt','RL-Trakt-L'],
+
+  // Kopf/Schädel Shift Querlinie — auf Höhe der Condylen
+
+// HWS Seitneigung RL
+  ['seitneigung hws nach rechts','HWS-SN-R'],['hws seitneigung rechts','HWS-SN-R'],
+  ['seitneigung hws rechts eingeschränkt','HWS-SN-R'],['habe es seitneigung rechts','HWS-SN-R'],
+  ['seitneigung hws nach links','HWS-SN-L'],['hws seitneigung links','HWS-SN-L'],
+  ['seitneigung hws links eingeschränkt','HWS-SN-L'],['habe es seitneigung links','HWS-SN-L'],
+
+  // Hyoid
+  ['hyoid nach links eingeschränkt','Hyoid-L'],['hyoid nach links','Hyoid-L'],
+  ['shift hyoid links','Hyoid-L'],['hyoid shift links','Hyoid-L'],['hyoid links','Hyoid-L'],
+  ['hyoid nach rechts eingeschränkt','Hyoid-R'],['hyoid nach rechts','Hyoid-R'],
+  ['shift hyoid rechts','Hyoid-R'],['hyoid shift rechts','Hyoid-R'],['hyoid rechts','Hyoid-R'],
+
+  // Durales Muster
+  ['durales muster links','Dural-L'],['durales muster rechts','Dural-R'],
+  ['duralmuster links','Dural-L'],['duralmuster rechts','Dural-R'],
+  ['dural links','Dural-L'],['dural rechts','Dural-R'],
+
+  // S — Kurvatur Sacrum
+  ['kurvatur sacrum rechts eingeschränkt','S-R'],['kurvatur sacrum rechts','S-R'],
+  ['sacrum kurvatur rechts','S-R'],
+  ['kurvatur sacrum links eingeschränkt','S-L'],['kurvatur sacrum links','S-L'],
+  ['sacrum kurvatur links','S-L'],
+  ['kurvatur sacrum beidseits eingeschränkt','S-B'],['kurvatur sacrum beidseits','S-B'],
+  ['sacrum kurvatur beidseits','S-B'],
+
+  // CTÜ Shift
+  ['ctü shift nach rechts','CTÜ-R'],['ctü shift rechts','CTÜ-R'],['ctt shift rechts','CTÜ-R'],
+  ['ctü shift nach links','CTÜ-L'],['ctü shift links','CTÜ-L'],['ctt shift links','CTÜ-L'],
+
+  ['wendepunkt ctü','wCTÜ'],
+
+  // Thoraxshift
+  ['thoraxshift nach rechts','ThS-R'],['thoraxshift rechts','ThS-R'],['thorax shift rechts','ThS-R'],
+  ['thoraxshift nach links','ThS-L'],['thoraxshift links','ThS-L'],['thorax shift links','ThS-L'],
+
+  ['wendepunkt thoraxshift','wThS'],
+
+  // Beckenshift
+  ['beckenshift nach rechts','BeS-R'],['beckenshift rechts','BeS-R'],['becken shift rechts','BeS-R'],
+  ['beckenshift nach links','BeS-L'],['beckenshift links','BeS-L'],['becken shift links','BeS-L'],
+
+  ['wendepunkt beckenshift','wBeS'],
+
+
+
+
+
+  // === Übertragen aus Stand/Sitz ===
+  ['hws seitneigung nach rechts','HWS-SN-R'],
+  ['seitneigung hws nach rechts eingeschränkt','HWS-SN-R'],
+  ['habe es seit neigung nach rechts eingeschränkt','HWS-SN-R'],
+  ['habe seit neigung nach rechts eingeschränkt','HWS-SN-R'],
+  ['es seit neigung nach rechts eingeschränkt','HWS-SN-R'],
+  ['zeitneigung habe es nach rechts eingeschränkt','HWS-SN-R'],
+  ['habe es zeitneigung nach rechts eingeschränkt','HWS-SN-R'],
+  ['habe es nach rechts eingeschränkt','HWS-SN-R'],
+  ['hws zeitneigung nach rechts','HWS-SN-R'],
+  ['seit neigung hws nach rechts','HWS-SN-R'],
+  ['zeitneigung hws nach rechts','HWS-SN-R'],
+  ['seitneigungseinschränkung hws nach rechts','HWS-SN-R'],
+  ['hws seitneigungseinschränkung nach rechts','HWS-SN-R'],
+  ['hws seitneigungseinschränkung rechts','HWS-SN-R'],
+  ['seit neigungseinschränkung hws nach rechts','HWS-SN-R'],
+  ['seit neigungseinschränkung hws rechts','HWS-SN-R'],
+  ['hws seitneigung nach links','HWS-SN-L'],
+  ['seitneigung hws nach links eingeschränkt','HWS-SN-L'],
+  ['habe es seit neigung nach links eingeschränkt','HWS-SN-L'],
+  ['habe seit neigung nach links eingeschränkt','HWS-SN-L'],
+  ['es seit neigung nach links eingeschränkt','HWS-SN-L'],
+  ['zeitneigung habe es nach links eingeschränkt','HWS-SN-L'],
+  ['habe es zeitneigung nach links eingeschränkt','HWS-SN-L'],
+  ['habe es nach links eingeschränkt','HWS-SN-L'],
+  ['hws zeitneigung nach links','HWS-SN-L'],
+  ['seit neigung hws nach links','HWS-SN-L'],
+  ['zeitneigung hws nach links','HWS-SN-L'],
+  ['seitneigungseinschränkung hws nach links','HWS-SN-L'],
+  ['hws seitneigungseinschränkung nach links','HWS-SN-L'],
+  ['hws seitneigungseinschränkung links','HWS-SN-L'],
+  ['seit neigungseinschränkung hws nach links','HWS-SN-L'],
+  ['seit neigungseinschränkung hws links','HWS-SN-L'],
+  ['herzzone','HWS-SN-R'],
+  ['lungenzone','HWS-SN-L'],
+  ['flexionseinschränkung schulter links','RL-F-L'],
+  ['flexionseinschränkung linke schulter','RL-F-L'],
+  ['flexionseinschränkung schulterlinks','RL-F-L'],
+  ['schulterflexionseinschränkung links','RL-F-L'],
+  ['schulterflexion links','RL-F-L'],
+  ['schulterflektion links','RL-F-L'],
+  ['schulterflektionseinschränkung links','RL-F-L'],
+  ['lektionseinschränkung linke schulter','RL-F-L'],
+  ['lektionseinschränkung schulter links','RL-F-L'],
+  ['flexion linke schulter','RL-F-L'],
+  ['eingeschränkte flexion linke schulter','RL-F-L'],
+  ['eingeschränkte flexion schulter links','RL-F-L'],
+  ['flektion schulter links','RL-F-L'],
+  ['schulter flexion links','RL-F-L'],
+  ['schulter flektion links','RL-F-L'],
+  ['flexionseinschränkung schulter rechts','RL-F-R'],
+  ['flexionseinschränkung rechte schulter','RL-F-R'],
+  ['flexionseinschränkung schulterrechts','RL-F-R'],
+  ['schulterflexionseinschränkung rechts','RL-F-R'],
+  ['schulterflexion rechts','RL-F-R'],
+  ['schulterflektion rechts','RL-F-R'],
+  ['schulterflektionseinschränkung rechts','RL-F-R'],
+  ['lektionseinschränkung rechte schulter','RL-F-R'],
+  ['lektionseinschränkung schulter rechts','RL-F-R'],
+  ['flexion rechte schulter','RL-F-R'],
+  ['eingeschränkte flexion rechte schulter','RL-F-R'],
+  ['eingeschränkte flexion schulter rechts','RL-F-R'],
+  ['flektion schulter rechts','RL-F-R'],
+  ['schulter flexion rechts','RL-F-R'],
+  ['schulter flektion rechts','RL-F-R'],
+  ['abduktionseinschränkung schulter links','RL-ABD-L'],
+  ['abduktionseinschränkung schulterlinks','RL-ABD-L'],
+  ['abduktion schulter links','RL-ABD-L'],
+  ['schulter abduktion links','RL-ABD-L'],
+  ['abduktionseinschränkung schulter rechts','RL-ABD-R'],
+  ['abduktionseinschränkung schulterrechts','RL-ABD-R'],
+  ['abduktion schulter rechts','RL-ABD-R'],
+  ['schulter abduktion rechts','RL-ABD-R'],
+  ['untersuchung im stand','__tab_Stand'],
+  ['untersuchung im sitz','__tab_Sitz'],
+  ['zeitung habe es nach rechts eingeschränkt','HWS-SN-R'],
+  ['seitneigung habe es nach rechts eingeschränkt','HWS-SN-R'],
+  ['habe es seit neigung rechts eingeschränkt','HWS-SN-R'],
+  ['habe es seitneigung nach rechts eingeschränkt','HWS-SN-R'],
+  ['zeitung habe es nach links eingeschränkt','HWS-SN-L'],
+  ['seitneigung habe es nach links eingeschränkt','HWS-SN-L'],
+  ['habe es seit neigung links eingeschränkt','HWS-SN-L'],
+  ['habe es seitneigung nach links eingeschränkt','HWS-SN-L'],
+  ['adduktion linke schulter eingeschränkt','RL-ABD-L'],
+  ['adduktionseinschränkung linke schulter','RL-ABD-L'],
+  ['adduktion linke schulter','RL-ABD-L'],
+  ['adoption linke schulter','RL-ABD-L'],
+  ['linke schulter in adduktion eingeschränkt','RL-ABD-L'],
+  ['adduktion rechte schulter eingeschränkt','RL-ABD-R'],
+  ['adduktionseinschränkung rechte schulter','RL-ABD-R'],
+  ['adduktion rechte schulter','RL-ABD-R'],
+  ['adoption rechte schulter','RL-ABD-R'],
+  ['rechte schulter in adduktion eingeschränkt','RL-ABD-R'],
+  ['außenrotation 90 grad schulter rechts eingeschränkt','RL-AR-R'],
+  ['außenrotationseinschränkung 90 grad schulter rechts','RL-AR-R'],
+  ['außenrotation schulter rechts in 90 grad eingeschränkt','RL-AR-R'],
+  ['außenrotation 90 grad schulter links eingeschränkt','RL-AR-L'],
+  ['außenrotationseinschränkung 90 grad schulter links','RL-AR-L'],
+  ['außenrotation schulter links in 90 grad eingeschränkt','RL-AR-L'],
+  ['innenrotation 90 grad schulter rechts eingeschränkt','RL-IR-R'],
+  ['innenrotationseinschränkung 90 grad schulter rechts','RL-IR-R'],
+  ['innenrotation schulter rechts in 90 grad eingeschränkt','RL-IR-R'],
+  ['innenrotation rechte schulter eingeschränkt','RL-IR-R'],
+  ['innenrotation rechte schulter','RL-IR-R'],
+  ['innenrotation 90 grad schulter links eingeschränkt','RL-IR-L'],
+  ['innenrotationseinschränkung 90 grad schulter links','RL-IR-L'],
+  ['innenrotation schulter links in 90 grad eingeschränkt','RL-IR-L'],
+  ['innenrotation linke schulter eingeschränkt','RL-IR-L'],
+  ['innenrotation linke schulter','RL-IR-L'],
+  ['außenrotation arm rechts eingeschränkt','RL-AR0-R'],
+  ['außenrotation arm rechts','RL-AR0-R'],
+  ['arm rechts in außenrotation eingeschränkt','RL-AR0-R'],
+  ['außenrotation linker arm eingeschränkt','RL-AR0-L'],
+  ['außenrotation der arme links eingeschränkt','RL-AR0-L'],
+  ['außenrotationseinschränkung linker arm','RL-AR0-L'],
+  ['außenrotation arm links eingeschränkt','RL-AR0-L'],
+  ['außenrotation arm links','RL-AR0-L'],
+  ['arm links in außenrotation eingeschränkt','RL-AR0-L'],
+  ['außenrotationseinschränkung rechter arm','RL-AR0-R'],
+  ['außenrotation rechter arm eingeschränkt','RL-AR0-R'],
+  ['außenrotation der arme rechts eingeschränkt','RL-AR0-R'],
+
+  // === Condyle Chrome-Verstümmelungen (gesammelt) ===
+  ['kondyle rechts anterior','Condyle-R-A'],['kondyle links anterior','Condyle-L-A'],
+  ['kondyle rechts posterior','Condyle-R-P'],['kondyle links posterior','Condyle-L-P'],
+  ['kondylle rechts anterior','Condyle-R-A'],['kondylle links anterior','Condyle-L-A'],
+  ['kondylle rechts posterior','Condyle-R-P'],['kondylle links posterior','Condyle-L-P'],
+  ['kondülle rechts anterior','Condyle-R-A'],['kondülle links anterior','Condyle-L-A'],
+  ['kondulle rechts anterior','Condyle-R-A'],['kondulle links anterior','Condyle-L-A'],
+  ['kondulle rechts posterior','Condyle-R-P'],['kondulle links posterior','Condyle-L-P'],
+  ['kondylle rechtsanterio','Condyle-R-A'],['kondylle linksanterio','Condyle-L-A'],
+  ['kondyle rechtsanterio','Condyle-R-A'],['kondyle linksanterio','Condyle-L-A'],
+  ['kondulle rechtsanterio','Condyle-R-A'],['kondulle linksanterio','Condyle-L-A'],
+  ['kondylle rechtsposterio','Condyle-R-P'],['kondylle linksposterio','Condyle-L-P'],
+  ['kondyle rechtsposterio','Condyle-R-P'],['kondyle linksposterio','Condyle-L-P'],
+  ['rechte kondüle anterior','Condyle-R-A'],['linke kondüle anterior','Condyle-L-A'],
+  ['rechte kondulle anterior','Condyle-R-A'],['linke kondulle anterior','Condyle-L-A'],
+  ['rechte kondyle anterior','Condyle-R-A'],['linke kondyle anterior','Condyle-L-A'],
+  ['rechte kondulle posterior','Condyle-R-P'],['linke kondulle posterior','Condyle-L-P'],
+  ['rechte kondyle posterior','Condyle-R-P'],['linke kondyle posterior','Condyle-L-P'],
+  ['rechte kondyle steht anterior','Condyle-R-A'],['linke kondyle steht anterior','Condyle-L-A'],
+  ['rechte kondyle steht posterior','Condyle-R-P'],['linke kondyle steht posterior','Condyle-L-P'],
+  ['rechte kondyle steht anterium','Condyle-R-A'],
+  ['rechte kondüle anteilung','Condyle-R-A'],['linke kondüle anteilung','Condyle-L-A'],
+  ['rechte kondyle anteo','Condyle-R-A'],['linke kondyle anteo','Condyle-L-A'],
+  ['rechte kondyle postillon','Condyle-R-P'],['linke kondyle postillon','Condyle-L-P'],
+  ['rechte kondyle postillion','Condyle-R-P'],['linke kondyle postillion','Condyle-L-P'],
+  ['rechte kondyle hinten','Condyle-R-P'],['linke kondyle hinten','Condyle-L-P'],
+  ['rechte condyle anterior','Condyle-R-A'],['linke condyle anterior','Condyle-L-A'],
+  ['rechte condyle posterior','Condyle-R-P'],['linke condyle posterior','Condyle-L-P'],
+  ['rechte condyle steht anterior','Condyle-R-A'],['linke condyle steht anterior','Condyle-L-A'],
+  ['linke condyle postillon','Condyle-L-P'],['rechte condyle postillon','Condyle-R-P'],
+  ['linke condylle postillion','Condyle-L-P'],['rechte condylle postillion','Condyle-R-P'],
+  ['linke condyle steht anterio','Condyle-L-A'],['linke condylle an der','Condyle-L-A'],
+  ['kondyle rechts antalya','Condyle-R-A'],['recht kondyle antalya','Condyle-R-A'],
+  ['kondyle rechts an teo','Condyle-R-A'],['kondulle rechts an teo','Condyle-R-A'],
+  ['kondyle rechts antonio','Condyle-R-A'],['kondyle links antonio','Condyle-L-A'],
+  ['kondyle rechtsanteilung','Condyle-R-A'],['kondulle rechtsanteilung','Condyle-L-A'],
+  ['kondylle rechtsanteilung','Condyle-R-A'],['kondylle linksanteilung','Condyle-L-A'],
+  ['kondyle rechtsanteil','Condyle-R-A'],['kondulle rechtsanteil','Condyle-L-A'],
+  ['10.0 rechts anterior','Condyle-R-A'],['10.0 links anterior','Condyle-L-A'],
+  ['10.0 rechts posterior','Condyle-R-P'],['10.0 links posterior','Condyle-L-P'],
+  ['10.0 rechtsanteilung','Condyle-R-A'],['10.0 rechts ventral','Condyle-R-A'],
+  ['10.0 links ventral','Condyle-L-A'],['10.0 rechts dorsal','Condyle-R-P'],
+  ['10.0 links dorsal','Condyle-L-P'],
+  ['10.0 rechtsanterio','Condyle-R-A'],['10.0 linksanterio','Condyle-L-A'],
+  ['10.0 rechtsposterio','Condyle-R-P'],['10.0 linksposterio','Condyle-L-P'],
+  ['10.0 rechtsantrag','Condyle-R-A'],['10.0 linksantrag','Condyle-L-A'],
+  ['10.0 rechts anträge','Condyle-R-A'],['10.0 links anträge','Condyle-L-A'],
+  ['10.0 rechts postillion','Condyle-R-P'],['10.0 links postillion','Condyle-L-P'],
+  ['10.0 anteil rechts','Condyle-R-A'],['10.0 anteil links','Condyle-L-A'],
+  ['10.0 posterior rechts','Condyle-R-P'],['10.0 posterior links','Condyle-L-P'],
+  ['10.0 beidseits anterior','Condyle-B-A'],['10.0 beidseits posterior','Condyle-B-P'],
+  ['c0 links ventral','Condyle-L-A'],['c0 rechts ventral','Condyle-R-A'],
+  ['c0 links dorsal','Condyle-L-P'],['c0 rechts dorsal','Condyle-R-P'],
+  ['c0 rechts anterior','Condyle-R-A'],['c0 links anterior','Condyle-L-A'],
+  ['c0 rechts posterior','Condyle-R-P'],['c0 links posterior','Condyle-L-P'],
+  // ventral/dorsal/vorne/hinten
+  ['condyle ventral rechts','Condyle-R-A'],['condyle vorne rechts','Condyle-R-A'],
+  ['condyle ventral links','Condyle-L-A'],['condyle vorne links','Condyle-L-A'],
+  ['condyle dorsal rechts','Condyle-R-P'],['condyle hinten rechts','Condyle-R-P'],
+  ['condyle dorsal links','Condyle-L-P'],['condyle hinten links','Condyle-L-P'],
+  ['kondyle ventral rechts','Condyle-R-A'],['kondyle vorne rechts','Condyle-R-A'],
+  ['kondyle ventral links','Condyle-L-A'],['kondyle vorne links','Condyle-L-A'],
+  ['kondyle dorsal rechts','Condyle-R-P'],['kondyle hinten rechts','Condyle-R-P'],
+  ['kondyle dorsal links','Condyle-L-P'],['kondyle hinten links','Condyle-L-P'],
+  ['kondüle ventral rechts','Condyle-R-A'],['kondüle vorne rechts','Condyle-R-A'],
+  ['kondüle ventral links','Condyle-L-A'],['kondüle vorne links','Condyle-L-A'],
+  ['kondüle dorsal rechts','Condyle-R-P'],['kondüle hinten rechts','Condyle-R-P'],
+  ['kondüle dorsal links','Condyle-L-P'],['kondüle hinten links','Condyle-L-P'],
+  ['rechte condyle vorne','Condyle-R-A'],['linke condyle vorne','Condyle-L-A'],
+  ['rechte condyle hinten','Condyle-R-P'],['linke condyle hinten','Condyle-L-P'],
+  ['beide condylen vorne','Condyle-B-A'],['beide condylen hinten','Condyle-B-P'],
+  ['kondylen beidseits vorne','Condyle-B-A'],['kondylen beidseits hinten','Condyle-B-P'],
+  ['kondylen beidseits ventral','Condyle-B-A'],['kondylen beidseits dorsal','Condyle-B-P'],
+  ['beide kondylen anterior','Condyle-B-A'],['beide kondylen posterior','Condyle-B-P'],
+
+  // === Weitere Condyle/Kopfgelenk/Neurocranium Varianten ===
+  // Kondüle aus letztem Test
+  ['kondüle rechts anterior','Condyle-R-A'],['kondüle links anterior','Condyle-L-A'],
+  ['kondüle rechts posterior','Condyle-R-P'],['kondüle links posterior','Condyle-L-P'],
+  // 10.0 mit Postillion
+  ['10.0 rechts postillion','Condyle-R-P'],['10.0 links postillion','Condyle-L-P'],
+  ['kondyle rechts postillion','Condyle-R-P'],['kondyle links postillion','Condyle-L-P'],
+  // C-0 mit Bindestrich (Chrome verstümmelt manchmal so)
+  ['c-0 rechts anterior','Condyle-R-A'],['c-0 links anterior','Condyle-L-A'],
+  ['c-0 rechts posterior','Condyle-R-P'],['c-0 links posterior','Condyle-L-P'],
+  ['c-0 rechts ventral','Condyle-R-A'],['c-0 links ventral','Condyle-L-A'],
+  ['c-0 rechts dorsal','Condyle-R-P'],['c-0 links dorsal','Condyle-L-P'],
+  ['c-0 links durchgang','Condyle-L-P'],['c-0 rechts durchgang','Condyle-R-P'],
+
+  // Kopfgelenk
+  ['kopfgelenk rechts ventral','Condyle-R-A'],['kopfgelenk links ventral','Condyle-L-A'],
+  ['kopfgelenk rechts anterior','Condyle-R-A'],['kopfgelenk links anterior','Condyle-L-A'],
+  ['kopfgelenk rechts dorsal','Condyle-R-P'],['kopfgelenk links dorsal','Condyle-L-P'],
+  ['kopfgelenk rechts posterior','Condyle-R-P'],['kopfgelenk links posterior','Condyle-L-P'],
+  ['kopfgelenk rechts vorne','Condyle-R-A'],['kopfgelenk links vorne','Condyle-L-A'],
+  ['kopfgelenk rechts hinten','Condyle-R-P'],['kopfgelenk links hinten','Condyle-L-P'],
+
+  // Neurocranium = Condyle posterior
+  ['neurocranium rechts','Condyle-R-P'],['neurocranium links','Condyle-L-P'],
+  ['neurocranium rechts posterior','Condyle-R-P'],['neurocranium links posterior','Condyle-L-P'],
+  ['neurocranium rechts dorsal','Condyle-R-P'],['neurocranium links dorsal','Condyle-L-P'],
+  ['neurocranium rechts hinten','Condyle-R-P'],['neurocranium links hinten','Condyle-L-P'],
+
+  // Kopfshift / HWS Shift / Shift HWS
+  ['hws shift nach links','Kopf-L'],['hws shift links','Kopf-L'],['shift hws nach links','Kopf-L'],
+  ['shift hws links','Kopf-L'],['kopfshift nach links','Kopf-L'],['kopfshift links','Kopf-L'],
+  ['kopf shift nach links','Kopf-L'],['kopf shift links','Kopf-L'],
+  ['hws shift nach rechts','Kopf-R'],['hws shift rechts','Kopf-R'],['shift hws nach rechts','Kopf-R'],
+  ['shift hws rechts','Kopf-R'],['kopfshift nach rechts','Kopf-R'],['kopfshift rechts','Kopf-R'],
+  ['kopf shift nach rechts','Kopf-R'],['kopf shift rechts','Kopf-R'],
+  ['hws schiff nach links','Kopf-L'],['hws schiff nach rechts','Kopf-R'],
+  ['kopfschiff links','Kopf-L'],['kopfschiff rechts','Kopf-R'],
+  ['kopf schiff links','Kopf-L'],['kopf schiff rechts','Kopf-R'],
+
+  // === Postillon/Posting Verstümmelungen für posterior ===
+  ['kondyle links postillon','Condyle-L-P'],['kondyle rechts postillon','Condyle-R-P'],
+  ['kondylle links postillon','Condyle-L-P'],['kondylle rechts postillon','Condyle-R-P'],
+  ['kondulle links postillon','Condyle-L-P'],['kondulle rechts postillon','Condyle-R-P'],
+  ['kondüle links postillon','Condyle-L-P'],['kondüle rechts postillon','Condyle-R-P'],
+  ['c0 rechts posten','Condyle-R-P'],['c0 links posten','Condyle-L-P'],
+  ['c0 rechts posting','Condyle-R-P'],['c0 links posting','Condyle-L-P'],
+  ['10.0 rechts posting','Condyle-R-P'],['10.0 links posting','Condyle-L-P'],
+  ['10.0 rechts posten','Condyle-R-P'],['10.0 links posten','Condyle-L-P'],
+  ['c-0 rechts posten','Condyle-R-P'],['c-0 links posten','Condyle-L-P'],
+  ['c-0 rechts posting','Condyle-R-P'],['c-0 links posting','Condyle-L-P'],
+  ['c-0 rechts postillon','Condyle-R-P'],['c-0 links postillon','Condyle-L-P'],
+  ['co rechts postillon','Condyle-R-P'],['co links postillon','Condyle-L-P'],
+  ['co rechts posten','Condyle-R-P'],['co links posten','Condyle-L-P'],
+
+  // === Neurokranium (mit K) und Neurocranium Postillon ===
+  ['neurokranium rechts','Condyle-R-P'],['neurokranium links','Condyle-L-P'],
+  ['neurokranium rechts posterior','Condyle-R-P'],['neurokranium links posterior','Condyle-L-P'],
+  ['neurokranium rechts dorsal','Condyle-R-P'],['neurokranium links dorsal','Condyle-L-P'],
+  ['neurokranium rechts hinten','Condyle-R-P'],['neurokranium links hinten','Condyle-L-P'],
+  ['neurocranium links postillon','Condyle-L-P'],['neurocranium rechts postillon','Condyle-R-P'],
+  ['neurokranium links postillon','Condyle-L-P'],['neurokranium rechts postillon','Condyle-R-P'],
+
+  // === Weitere Verstümmelungen ===
+  ['10.0 rechts postillon','Condyle-R-P'],['10.0 links postillon','Condyle-L-P'],
+  ['c0 rechts antonio','Condyle-R-A'],['c0 links antonio','Condyle-L-A'],
+  ['c-0 rechts antonio','Condyle-R-A'],['c-0 links antonio','Condyle-L-A'],
+  ['fonduelle rechts post','Condyle-R-P'],['fonduelle links post','Condyle-L-P'],
+  ['fonduelle rechts posten','Condyle-R-P'],['fonduelle links posten','Condyle-L-P'],
+  ['fonduelle rechts anterium','Condyle-R-A'],['fonduelle links anterium','Condyle-L-A'],
+  ['fonduelle rechts anterio','Condyle-R-A'],['fonduelle links anterio','Condyle-L-A'],
+  ['10.0 rechts anteo','Condyle-R-A'],['10.0 links anteo','Condyle-L-A'],
+  ['10.0 rechts anteilung','Condyle-R-A'],['10.0 links anteilung','Condyle-L-A'],
+  ['c0 rechts anteo','Condyle-R-A'],['c0 links anteo','Condyle-L-A'],
+
+  ['kondyle rechts posteo','Condyle-R-P'],['kondyle links posteo','Condyle-L-P'],
+  ['kondylle rechts posteo','Condyle-R-P'],['kondylle links posteo','Condyle-L-P'],
+  ['kondulle rechts posteo','Condyle-R-P'],['kondulle links posteo','Condyle-L-P'],
+  ['kondüle rechts posteo','Condyle-R-P'],['kondüle links posteo','Condyle-L-P'],
+  ['c0 rechts posteo','Condyle-R-P'],['c0 links posteo','Condyle-L-P'],
+  ['10.0 rechts posteo','Condyle-R-P'],['10.0 links posteo','Condyle-L-P'],
+  ['fonduelle rechts posteo','Condyle-R-P'],['fonduelle links posteo','Condyle-L-P'],
+
+  // === c-Variante zu allen kond-Einträgen ===
+  ['condylle rechts anterior','Condyle-R-A'],
+  ['condylle links anterior','Condyle-L-A'],
+  ['condylle rechts posterior','Condyle-R-P'],
+  ['condylle links posterior','Condyle-L-P'],
+  ['condülle rechts anterior','Condyle-R-A'],
+  ['condülle links anterior','Condyle-L-A'],
+  ['condulle rechts anterior','Condyle-R-A'],
+  ['condulle links anterior','Condyle-L-A'],
+  ['condulle rechts posterior','Condyle-R-P'],
+  ['condulle links posterior','Condyle-L-P'],
+  ['condylle rechtsanterio','Condyle-R-A'],
+  ['condylle linksanterio','Condyle-L-A'],
+  ['condyle rechtsanterio','Condyle-R-A'],
+  ['condyle linksanterio','Condyle-L-A'],
+  ['condulle rechtsanterio','Condyle-R-A'],
+  ['condulle linksanterio','Condyle-L-A'],
+  ['condylle rechtsposterio','Condyle-R-P'],
+  ['condylle linksposterio','Condyle-L-P'],
+  ['condyle rechtsposterio','Condyle-R-P'],
+  ['condyle linksposterio','Condyle-L-P'],
+  ['condyle rechts antalya','Condyle-R-A'],
+  ['condyle rechts an teo','Condyle-R-A'],
+  ['condulle rechts an teo','Condyle-R-A'],
+  ['condyle rechts antonio','Condyle-R-A'],
+  ['condyle links antonio','Condyle-L-A'],
+  ['condyle rechtsanteilung','Condyle-R-A'],
+  ['condulle rechtsanteilung','Condyle-L-A'],
+  ['condylle rechtsanteilung','Condyle-R-A'],
+  ['condylle linksanteilung','Condyle-L-A'],
+  ['condyle rechtsanteil','Condyle-R-A'],
+  ['condulle rechtsanteil','Condyle-L-A'],
+  ['condüle ventral rechts','Condyle-R-A'],
+  ['condüle vorne rechts','Condyle-R-A'],
+  ['condüle ventral links','Condyle-L-A'],
+  ['condüle vorne links','Condyle-L-A'],
+  ['condüle dorsal rechts','Condyle-R-P'],
+  ['condüle hinten rechts','Condyle-R-P'],
+  ['condüle dorsal links','Condyle-L-P'],
+  ['condüle hinten links','Condyle-L-P'],
+  ['condylen beidseits vorne','Condyle-B-A'],
+  ['condylen beidseits hinten','Condyle-B-P'],
+  ['condylen beidseits ventral','Condyle-B-A'],
+  ['condylen beidseits dorsal','Condyle-B-P'],
+  ['condüle rechts anterior','Condyle-R-A'],
+  ['condüle links anterior','Condyle-L-A'],
+  ['condüle rechts posterior','Condyle-R-P'],
+  ['condüle links posterior','Condyle-L-P'],
+  ['condyle rechts postillion','Condyle-R-P'],
+  ['condyle links postillion','Condyle-L-P'],
+  ['condyle links postillon','Condyle-L-P'],
+  ['condyle rechts postillon','Condyle-R-P'],
+  ['condylle links postillon','Condyle-L-P'],
+  ['condylle rechts postillon','Condyle-R-P'],
+  ['condulle links postillon','Condyle-L-P'],
+  ['condulle rechts postillon','Condyle-R-P'],
+  ['condüle links postillon','Condyle-L-P'],
+  ['condüle rechts postillon','Condyle-R-P'],
+  ['condyle rechts posteo','Condyle-R-P'],
+  ['condyle links posteo','Condyle-L-P'],
+  ['condylle rechts posteo','Condyle-R-P'],
+  ['condylle links posteo','Condyle-L-P'],
+  ['condulle rechts posteo','Condyle-R-P'],
+  ['condulle links posteo','Condyle-L-P'],
+  ['condüle rechts posteo','Condyle-R-P'],
+  ['condüle links posteo','Condyle-L-P'],
+
+  // HWS Seit Neigung mit Leerzeichen
+  ['hws seit neigung nach links eingeschränkt','HWS-SN-L'],['hws seit neigung nach rechts eingeschränkt','HWS-SN-R'],
+  ['hws seit neigung links eingeschränkt','HWS-SN-L'],['hws seit neigung rechts eingeschränkt','HWS-SN-R'],
+  ['hws seit neigung nach links','HWS-SN-L'],['hws seit neigung nach rechts','HWS-SN-R'],
+
+  // posterio statt posterior
+  ['kondüle rechts posterio','Condyle-R-P'],['kondüle links posterio','Condyle-L-P'],
+
+  // Neurocranium ohne weitere Wörter (nur "neurocranium links/rechts" bereits drin, hier nochmal sicher)
+  ['neurocranium links','Condyle-L-P'],['neurocranium rechts','Condyle-R-P'],
+
+  // Außenrotation Schulter
+  ['außenrotation schulter rechts','RL-AR-R'],['außenrotation schulter links','RL-AR-L'],
+  ['außenrotation schulter rechts eingeschränkt','RL-AR-R'],['außenrotation schulter links eingeschränkt','RL-AR-L'],
+  ['außenrotation rechte schulter','RL-AR-R'],['außenrotation linke schulter','RL-AR-L'],
+  ['rechte schulter außenrotation eingeschränkt','RL-AR-R'],['linke schulter außenrotation eingeschränkt','RL-AR-L'],
+  ['ar rechts schulter','RL-AR-R'],['ar links schulter','RL-AR-L'],
+  ['ar schulter rechts','RL-AR-R'],['ar schulter links','RL-AR-L'],
+
+  // Innenrotation Schulter (auch sicher dabei)
+  ['innenrotation schulter rechts','RL-IR-R'],['innenrotation schulter links','RL-IR-L'],
+  ['innenrotation schulter rechts eingeschränkt','RL-IR-R'],['innenrotation schulter links eingeschränkt','RL-IR-L'],
+  ['innenrotation rechte schulter','RL-IR-R'],['innenrotation linke schulter','RL-IR-L'],
+  ['rechte schulter innenrotation eingeschränkt','RL-IR-R'],['linke schulter innenrotation eingeschränkt','RL-IR-L'],
+
+  // CTÜ-Shift Varianten
+  ['ctü-shift links','CTÜ-L'],['ctü-shift rechts','CTÜ-R'],
+  ['ctü shift links','CTÜ-L'],['ctü shift rechts','CTÜ-R'],
+  ['shift ctü links','CTÜ-L'],['shift ctü rechts','CTÜ-R'],
+  ['ctü-shift nach links','CTÜ-L'],['ctü-shift nach rechts','CTÜ-R'],
+  ['shift ctü nach links','CTÜ-L'],['shift ctü nach rechts','CTÜ-R'],
+  ['ctue shift links','CTÜ-L'],['ctue shift rechts','CTÜ-R'],
+  ['ctue-shift links','CTÜ-L'],['ctue-shift rechts','CTÜ-R'],
+  ['shift ctue links','CTÜ-L'],['shift ctue rechts','CTÜ-R'],
+  // mit "schiff" Verstümmelung
+  ['ctü-schiff links','CTÜ-L'],['ctü-schiff rechts','CTÜ-R'],
+  ['ctü schiff links','CTÜ-L'],['ctü schiff rechts','CTÜ-R'],
+  ['schiff ctü links','CTÜ-L'],['schiff ctü rechts','CTÜ-R'],
+
+  // Kurzformen Kurvaturbuchstaben
+  // (entfernt: zu kurz) ['e rechts','E-R'],['e links','E-L'],['e beidseits','E-B'],
+  ['kurvatur e rechts','E-R'],['kurvatur e links','E-L'],
+  // (entfernt: zu kurz) ['d rechts','D-R'],['d links','D-L'],['d beidseits','D-B'],
+  ['kurvatur d rechts','D-R'],['kurvatur d links','D-L'],
+  // (entfernt: zu kurz) ['c rechts','C-R'],['c links','C-L'],['c beidseits','C-B'],
+  ['kurvatur c rechts','C-R'],['kurvatur c links','C-L'],
+  // (entfernt: zu kurz) ['b rechts','B-R'],['b links','B-L'],['b beidseits','B-B'],
+  ['kurvatur b rechts','B-R'],['kurvatur b links','B-L'],
+  // (entfernt: zu kurz) ['a rechts','A-R'],['a links','A-L'],['a beidseits','A-B'],
+  ['kurvatur a rechts','A-R'],['kurvatur a links','A-L'],
+  // (entfernt: zu kurz) ['o rechts','O-R'],['o links','O-L'],['o beidseits','O-B'],
+  ['kurvatur o rechts','O-R'],['kurvatur o links','O-L'],
+  // (entfernt: zu kurz) ['s rechts','S-R'],['s links','S-L'],['s beidseits','S-B'],
+  ['kurvatur s rechts','S-R'],['kurvatur s links','S-L'],
+
+  // Kurator (Tippfehler/Verstümmelung von Kurvatur) + granial
+  ['kurator hws granial rechts','E-R'],['kurator hws granial links','E-L'],
+  ['kurator hws granial beidseits','E-B'],
+  ['kurator hws kranial rechts','E-R'],['kurator hws kranial links','E-L'],
+  ['kurator hws cranial rechts','E-R'],['kurator hws cranial links','E-L'],
+  ['hws kurator rechts kranial','E-R'],['hws kurator links kranial','E-L'],
+  ['hws kurator rechts granial','E-R'],['hws kurator links granial','E-L'],
+  ['hws kurvatur rechts kranial','E-R'],['hws kurvatur links kranial','E-L'],
+  ['hws kurvatur rechts granial','E-R'],['hws kurvatur links granial','E-L'],
+  ['kurvatur hws granial rechts','E-R'],['kurvatur hws granial links','E-L'],
+  ['kurvatur hws kranial rechts','E-R'],['kurvatur hws kranial links','E-L'],
+
+  // Lunge → 4. Rippe
+  ['lunge rechts','Rippe4-R'],['lunge links','Rippe4-L'],
+  ['rechte lunge','Rippe4-R'],['linke lunge','Rippe4-L'],
+  ['lungenzone rechts','Rippe4-R'],['lungenzone links','Rippe4-L'],
+
+  // Hüfte ausgeschriebene Zahlen
+  ['hüfte eins rechts','Hueft-I-R'],['hüfte eins links','Hueft-I-L'],
+  ['hüfte eins rechts eingeschränkt','Hueft-I-R'],['hüfte eins links eingeschränkt','Hueft-I-L'],
+  ['hüfte zwei rechts','Hueft-II-R'],['hüfte zwei links','Hueft-II-L'],
+  ['hüfte zwei rechts eingeschränkt','Hueft-II-R'],['hüfte zwei links eingeschränkt','Hueft-II-L'],
+  ['hüfte drei rechts','Hueft-III-R'],['hüfte drei links','Hueft-III-L'],
+  ['hüfte drei rechts eingeschränkt','Hueft-III-R'],['hüfte drei links eingeschränkt','Hueft-III-L'],
+  ['hüfte vier rechts','Hueft-IV-R'],['hüfte vier links','Hueft-IV-L'],
+  ['hüfte vier rechts eingeschränkt','Hueft-IV-R'],['hüfte vier links eingeschränkt','Hueft-IV-L'],
+
+  // Hüft Extension Varianten
+  ['extension rechte hüfte eingeschränkt','Hueft-E-R'],['extension linke hüfte eingeschränkt','Hueft-E-L'],
+  ['hüftextension rechts eingeschränkt','Hueft-E-R'],['hüftextension links eingeschränkt','Hueft-E-L'],
+  ['hüftextension rechts','Hueft-E-R'],['hüftextension links','Hueft-E-L'],
+  ['hüfte extension rechts','Hueft-E-R'],['hüfte extension links','Hueft-E-L'],
+  ['hüfte extension rechts eingeschränkt','Hueft-E-R'],['hüfte extension links eingeschränkt','Hueft-E-L'],
+
+  // Hüft Flexion Varianten
+  ['flexion rechte hüfte eingeschränkt','Hueft-F-R'],['flexion linke hüfte eingeschränkt','Hueft-F-L'],
+  ['hüftflexion rechts eingeschränkt','Hueft-F-R'],['hüftflexion links eingeschränkt','Hueft-F-L'],
+  ['hüftflexion rechts','Hueft-F-R'],['hüftflexion links','Hueft-F-L'],
+  ['hüfte flexion rechts','Hueft-F-R'],['hüfte flexion links','Hueft-F-L'],
+  ['hüfte flexion rechts eingeschränkt','Hueft-F-R'],['hüfte flexion links eingeschränkt','Hueft-F-L'],
+
+  // Anatomische Bezeichnungen für Kurvaturen
+  // Hiatus → CV (Kurvatur Coccyx, das C an der Sacrum-Spitze)
+  ['hiatus rechts','CV-R'],['hiatus links','CV-L'],['hiatus beidseits','CV-B'],
+
+  // Sacrum → S
+  ['sacrum rechts','S-R'],['sacrum links','S-L'],['sacrum beidseits','S-B'],
+
+  // LWS caudal → O (untere LWS)
+  ['lws caudal rechts','O-R'],['lws caudal links','O-L'],['lws caudal beidseits','O-B'],
+  ['lws kaudal rechts','O-R'],['lws kaudal links','O-L'],['lws kaudal beidseits','O-B'],
+
+  // LWS cranial/kranial → A (obere LWS)
+  ['lws cranial rechts','A-R'],['lws cranial links','A-L'],['lws cranial beidseits','A-B'],
+  ['lws kranial rechts','A-R'],['lws kranial links','A-L'],['lws kranial beidseits','A-B'],
+  ['lws granial rechts','A-R'],['lws granial links','A-L'],
+
+  // BWS caudal → B (untere BWS)
+  ['bws caudal rechts','B-R'],['bws caudal links','B-L'],['bws caudal beidseits','B-B'],
+  ['bws kaudal rechts','B-R'],['bws kaudal links','B-L'],['bws kaudal beidseits','B-B'],
+
+  // BWS cranial/kranial → C (obere BWS)
+  ['bws cranial rechts','C-R'],['bws cranial links','C-L'],['bws cranial beidseits','C-B'],
+  ['bws kranial rechts','C-R'],['bws kranial links','C-L'],['bws kranial beidseits','C-B'],
+  ['bws granial rechts','C-R'],['bws granial links','C-L'],
+
+  // HWS caudal → D (untere HWS)
+  ['hws caudal rechts','D-R'],['hws caudal links','D-L'],['hws caudal beidseits','D-B'],
+  ['hws kaudal rechts','D-R'],['hws kaudal links','D-L'],['hws kaudal beidseits','D-B'],
+
+  // HWS cranial/kranial → E (obere HWS)
+  ['hws cranial rechts','E-R'],['hws cranial links','E-L'],['hws cranial beidseits','E-B'],
+  ['hws kranial rechts','E-R'],['hws kranial links','E-L'],['hws kranial beidseits','E-B'],
+  ['hws granial rechts','E-R'],['hws granial links','E-L'],
+
+  // Hüft Innenrotation - umgedrehte Reihenfolge
+  ['rechte hüfte innenrotation eingeschränkt','HuefIRL-R'],['linke hüfte innenrotation eingeschränkt','HuefIRL-L'],
+  ['rechte hüfte innenrotation','HuefIRL-R'],['linke hüfte innenrotation','HuefIRL-L'],
+
+  // Hüft Außenrotation - umgedrehte Reihenfolge
+  ['rechte hüfte außenrotation eingeschränkt','HuefARL-R'],['linke hüfte außenrotation eingeschränkt','HuefARL-L'],
+  ['rechte hüfte außenrotation','HuefARL-R'],['linke hüfte außenrotation','HuefARL-L'],
+
+  // Innenrotation/Außenrotation kurz - linke/rechte Hüfte Reihenfolge
+  ['innenrotation kurz rechte hüfte','HuefIRK-R'],['innenrotation kurz linke hüfte','HuefIRK-L'],
+  ['innenrotation kurz rechte hüfte eingeschränkt','HuefIRK-R'],['innenrotation kurz linke hüfte eingeschränkt','HuefIRK-L'],
+  ['außenrotation kurz rechte hüfte','HuefARK-R'],['außenrotation kurz linke hüfte','HuefARK-L'],
+  ['außenrotation kurz rechte hüfte eingeschränkt','HuefARK-R'],['außenrotation kurz linke hüfte eingeschränkt','HuefARK-L'],
+
+  // Flexion/Extension - linke/rechte Hüfte (ohne "eingeschränkt")
+  ['flexion rechte hüfte','Hueft-F-R'],['flexion linke hüfte','Hueft-F-L'],
+  ['extension rechte hüfte','Hueft-E-R'],['extension linke hüfte','Hueft-E-L'],
+
+  // Coccyx Kurzform
+  ['coccyx rechts','CV-R'],['coccyx links','CV-L'],['coccyx beidseits','CV-B'],
+  ['steißbein rechts','CV-R'],['steißbein links','CV-L'],['steißbein beidseits','CV-B'],
+
+  // Flexion/Extension Hüfte (kurze Form)
+  ['flexion rechte hüfte','Hueft-F-R'],['flexion linke hüfte','Hueft-F-L'],
+  ['extension rechte hüfte','Hueft-E-R'],['extension linke hüfte','Hueft-E-L'],
+
+  // SLR Sprachbefehle (ohne Gradzahl - nur Symbol einfärben)
+  ['slr links','SLR-L'],['slr rechts','SLR-R'],
+  ['straight leg raise links','SLR-L'],['straight leg raise rechts','SLR-R'],
+
+  // Knieflektion/Knieflexion zusammengeschrieben
+  ['knieflektion rechts','KnieFlex-R'],['knieflektion links','KnieFlex-L'],
+  ['knieflektion rechts eingeschränkt','KnieFlex-R'],['knieflektion links eingeschränkt','KnieFlex-L'],
+  ['knieflexion rechts','KnieFlex-R'],['knieflexion links','KnieFlex-L'],
+  ['knieflexion rechts eingeschränkt','KnieFlex-R'],['knieflexion links eingeschränkt','KnieFlex-L'],
+  // Knieextension zusammengeschrieben
+  ['knieextension rechts','KnieExt-R'],['knieextension links','KnieExt-L'],
+  ['knieextension rechts eingeschränkt','KnieExt-R'],['knieextension links eingeschränkt','KnieExt-L'],
+
+  // Hüfte zusammengeschrieben
+  ['hüfteeins rechts','Hueft-I-R'],['hüfteeins links','Hueft-I-L'],
+  ['hüfteeins rechts eingeschränkt','Hueft-I-R'],['hüfteeins links eingeschränkt','Hueft-I-L'],
+  ['hüftezwei rechts','Hueft-II-R'],['hüftezwei links','Hueft-II-L'],
+  ['hüftezwei rechts eingeschränkt','Hueft-II-R'],['hüftezwei links eingeschränkt','Hueft-II-L'],
+  ['hüftedrei rechts','Hueft-III-R'],['hüftedrei links','Hueft-III-L'],
+  ['hüftedrei rechts eingeschränkt','Hueft-III-R'],['hüftedrei links eingeschränkt','Hueft-III-L'],
+  ['hüftevier rechts','Hueft-IV-R'],['hüftevier links','Hueft-IV-L'],
+  ['hüftevier rechts eingeschränkt','Hueft-IV-R'],['hüftevier links eingeschränkt','Hueft-IV-L'],
+
+  // Einzelne Buchstaben für Kurvaturen (matchen nur wenn keine längere Phrase passt)
+  // (entfernt - jetzt via letterMatch): ['e rechts','E-R'],['e links','E-L'],['e beidseits','E-B'],
+  // (entfernt - jetzt via letterMatch): ['d rechts','D-R'],['d links','D-L'],['d beidseits','D-B'],
+  // (entfernt - jetzt via letterMatch): ['c rechts','C-R'],['c links','C-L'],['c beidseits','C-B'],
+  // (entfernt - jetzt via letterMatch): ['b rechts','B-R'],['b links','B-L'],['b beidseits','B-B'],
+  // (entfernt - jetzt via letterMatch): ['a rechts','A-R'],['a links','A-L'],['a beidseits','A-B'],
+  // (entfernt - jetzt via letterMatch): ['o rechts','O-R'],['o links','O-L'],['o beidseits','O-B'],
+  // (entfernt - jetzt via letterMatch): ['s rechts','S-R'],['s links','S-L'],['s beidseits','S-B'],
+
+  // Sacrum-Kurvaturen
+  ['sacrum caudal rechts','CV-R'],['sacrum caudal links','CV-L'],['sacrum caudal beidseits','CV-B'],
+  ['sacrum kaudal rechts','CV-R'],['sacrum kaudal links','CV-L'],['sacrum kaudal beidseits','CV-B'],
+  ['sacrum cranial rechts','S-R'],['sacrum cranial links','S-L'],['sacrum cranial beidseits','S-B'],
+  ['sacrum kranial rechts','S-R'],['sacrum kranial links','S-L'],['sacrum kranial beidseits','S-B'],
+  ['sacrum granial rechts','S-R'],['sacrum granial links','S-L'],
+
+  // LWS mit "kranial" (mit k)
+  ['lws kranial rechts','A-R'],['lws kranial links','A-L'],['lws kranial beidseits','A-B'],
+
+  // BWS mit "kranial" 
+  ['bws kranial rechts','C-R'],['bws kranial links','C-L'],['bws kranial beidseits','C-B'],
+
+  // === Kurvaturen mit Wortreihenfolge-Varianten und Chrome-Verstümmelungen ===
+  ['sacrum cranial rechts','S-R'],
+  ['sacrum rechts cranial','S-R'],
+  ['sacrum cranial links','S-L'],
+  ['sacrum links cranial','S-L'],
+  ['sacrum kranial rechts','S-R'],
+  ['sacrum rechts kranial','S-R'],
+  ['sacrum kranial links','S-L'],
+  ['sacrum links kranial','S-L'],
+  ['sacrum granial rechts','S-R'],
+  ['sacrum rechts granial','S-R'],
+  ['sacrum granial links','S-L'],
+  ['sacrum links granial','S-L'],
+  ['sacrum granja rechts','S-R'],
+  ['sacrum rechts granja','S-R'],
+  ['sacrum granja links','S-L'],
+  ['sacrum links granja','S-L'],
+  ['sacrum ranja rechts','S-R'],
+  ['sacrum rechts ranja','S-R'],
+  ['sacrum ranja links','S-L'],
+  ['sacrum links ranja','S-L'],
+  ['sacrum grania rechts','S-R'],
+  ['sacrum rechts grania','S-R'],
+  ['sacrum grania links','S-L'],
+  ['sacrum links grania','S-L'],
+  ['sacrum caudal rechts','CV-R'],
+  ['sacrum rechts caudal','CV-R'],
+  ['sacrum caudal links','CV-L'],
+  ['sacrum links caudal','CV-L'],
+  ['sacrum kaudal rechts','CV-R'],
+  ['sacrum rechts kaudal','CV-R'],
+  ['sacrum kaudal links','CV-L'],
+  ['sacrum links kaudal','CV-L'],
+  ['sacrum kauder rechts','CV-R'],
+  ['sacrum rechts kauder','CV-R'],
+  ['sacrum kauder links','CV-L'],
+  ['sacrum links kauder','CV-L'],
+  ['sacrum kaudern rechts','CV-R'],
+  ['sacrum rechts kaudern','CV-R'],
+  ['sacrum kaudern links','CV-L'],
+  ['sacrum links kaudern','CV-L'],
+  ['sag rum cranial rechts','S-R'],
+  ['sag rum rechts cranial','S-R'],
+  ['sag rum cranial links','S-L'],
+  ['sag rum links cranial','S-L'],
+  ['sag rum kranial rechts','S-R'],
+  ['sag rum rechts kranial','S-R'],
+  ['sag rum kranial links','S-L'],
+  ['sag rum links kranial','S-L'],
+  ['sag rum granial rechts','S-R'],
+  ['sag rum rechts granial','S-R'],
+  ['sag rum granial links','S-L'],
+  ['sag rum links granial','S-L'],
+  ['sag rum granja rechts','S-R'],
+  ['sag rum rechts granja','S-R'],
+  ['sag rum granja links','S-L'],
+  ['sag rum links granja','S-L'],
+  ['sag rum ranja rechts','S-R'],
+  ['sag rum rechts ranja','S-R'],
+  ['sag rum ranja links','S-L'],
+  ['sag rum links ranja','S-L'],
+  ['sag rum grania rechts','S-R'],
+  ['sag rum rechts grania','S-R'],
+  ['sag rum grania links','S-L'],
+  ['sag rum links grania','S-L'],
+  ['sag rum caudal rechts','CV-R'],
+  ['sag rum rechts caudal','CV-R'],
+  ['sag rum caudal links','CV-L'],
+  ['sag rum links caudal','CV-L'],
+  ['sag rum kaudal rechts','CV-R'],
+  ['sag rum rechts kaudal','CV-R'],
+  ['sag rum kaudal links','CV-L'],
+  ['sag rum links kaudal','CV-L'],
+  ['sag rum kauder rechts','CV-R'],
+  ['sag rum rechts kauder','CV-R'],
+  ['sag rum kauder links','CV-L'],
+  ['sag rum links kauder','CV-L'],
+  ['sag rum kaudern rechts','CV-R'],
+  ['sag rum rechts kaudern','CV-R'],
+  ['sag rum kaudern links','CV-L'],
+  ['sag rum links kaudern','CV-L'],
+  ['sagrum cranial rechts','S-R'],
+  ['sagrum rechts cranial','S-R'],
+  ['sagrum cranial links','S-L'],
+  ['sagrum links cranial','S-L'],
+  ['sagrum kranial rechts','S-R'],
+  ['sagrum rechts kranial','S-R'],
+  ['sagrum kranial links','S-L'],
+  ['sagrum links kranial','S-L'],
+  ['sagrum granial rechts','S-R'],
+  ['sagrum rechts granial','S-R'],
+  ['sagrum granial links','S-L'],
+  ['sagrum links granial','S-L'],
+  ['sagrum granja rechts','S-R'],
+  ['sagrum rechts granja','S-R'],
+  ['sagrum granja links','S-L'],
+  ['sagrum links granja','S-L'],
+  ['sagrum ranja rechts','S-R'],
+  ['sagrum rechts ranja','S-R'],
+  ['sagrum ranja links','S-L'],
+  ['sagrum links ranja','S-L'],
+  ['sagrum grania rechts','S-R'],
+  ['sagrum rechts grania','S-R'],
+  ['sagrum grania links','S-L'],
+  ['sagrum links grania','S-L'],
+  ['sagrum caudal rechts','CV-R'],
+  ['sagrum rechts caudal','CV-R'],
+  ['sagrum caudal links','CV-L'],
+  ['sagrum links caudal','CV-L'],
+  ['sagrum kaudal rechts','CV-R'],
+  ['sagrum rechts kaudal','CV-R'],
+  ['sagrum kaudal links','CV-L'],
+  ['sagrum links kaudal','CV-L'],
+  ['sagrum kauder rechts','CV-R'],
+  ['sagrum rechts kauder','CV-R'],
+  ['sagrum kauder links','CV-L'],
+  ['sagrum links kauder','CV-L'],
+  ['sagrum kaudern rechts','CV-R'],
+  ['sagrum rechts kaudern','CV-R'],
+  ['sagrum kaudern links','CV-L'],
+  ['sagrum links kaudern','CV-L'],
+  ['lws cranial rechts','A-R'],
+  ['lws rechts cranial','A-R'],
+  ['lws cranial links','A-L'],
+  ['lws links cranial','A-L'],
+  ['lws kranial rechts','A-R'],
+  ['lws rechts kranial','A-R'],
+  ['lws kranial links','A-L'],
+  ['lws links kranial','A-L'],
+  ['lws granial rechts','A-R'],
+  ['lws rechts granial','A-R'],
+  ['lws granial links','A-L'],
+  ['lws links granial','A-L'],
+  ['lws granja rechts','A-R'],
+  ['lws rechts granja','A-R'],
+  ['lws granja links','A-L'],
+  ['lws links granja','A-L'],
+  ['lws ranja rechts','A-R'],
+  ['lws rechts ranja','A-R'],
+  ['lws ranja links','A-L'],
+  ['lws links ranja','A-L'],
+  ['lws grania rechts','A-R'],
+  ['lws rechts grania','A-R'],
+  ['lws grania links','A-L'],
+  ['lws links grania','A-L'],
+  ['lws caudal rechts','O-R'],
+  ['lws rechts caudal','O-R'],
+  ['lws caudal links','O-L'],
+  ['lws links caudal','O-L'],
+  ['lws kaudal rechts','O-R'],
+  ['lws rechts kaudal','O-R'],
+  ['lws kaudal links','O-L'],
+  ['lws links kaudal','O-L'],
+  ['lws kauder rechts','O-R'],
+  ['lws rechts kauder','O-R'],
+  ['lws kauder links','O-L'],
+  ['lws links kauder','O-L'],
+  ['lws kaudern rechts','O-R'],
+  ['lws rechts kaudern','O-R'],
+  ['lws kaudern links','O-L'],
+  ['lws links kaudern','O-L'],
+  ['lbs cranial rechts','A-R'],
+  ['lbs rechts cranial','A-R'],
+  ['lbs cranial links','A-L'],
+  ['lbs links cranial','A-L'],
+  ['lbs kranial rechts','A-R'],
+  ['lbs rechts kranial','A-R'],
+  ['lbs kranial links','A-L'],
+  ['lbs links kranial','A-L'],
+  ['lbs granial rechts','A-R'],
+  ['lbs rechts granial','A-R'],
+  ['lbs granial links','A-L'],
+  ['lbs links granial','A-L'],
+  ['lbs granja rechts','A-R'],
+  ['lbs rechts granja','A-R'],
+  ['lbs granja links','A-L'],
+  ['lbs links granja','A-L'],
+  ['lbs ranja rechts','A-R'],
+  ['lbs rechts ranja','A-R'],
+  ['lbs ranja links','A-L'],
+  ['lbs links ranja','A-L'],
+  ['lbs grania rechts','A-R'],
+  ['lbs rechts grania','A-R'],
+  ['lbs grania links','A-L'],
+  ['lbs links grania','A-L'],
+  ['lbs caudal rechts','O-R'],
+  ['lbs rechts caudal','O-R'],
+  ['lbs caudal links','O-L'],
+  ['lbs links caudal','O-L'],
+  ['lbs kaudal rechts','O-R'],
+  ['lbs rechts kaudal','O-R'],
+  ['lbs kaudal links','O-L'],
+  ['lbs links kaudal','O-L'],
+  ['lbs kauder rechts','O-R'],
+  ['lbs rechts kauder','O-R'],
+  ['lbs kauder links','O-L'],
+  ['lbs links kauder','O-L'],
+  ['lbs kaudern rechts','O-R'],
+  ['lbs rechts kaudern','O-R'],
+  ['lbs kaudern links','O-L'],
+  ['lbs links kaudern','O-L'],
+  ['bws cranial rechts','C-R'],
+  ['bws rechts cranial','C-R'],
+  ['bws cranial links','C-L'],
+  ['bws links cranial','C-L'],
+  ['bws kranial rechts','C-R'],
+  ['bws rechts kranial','C-R'],
+  ['bws kranial links','C-L'],
+  ['bws links kranial','C-L'],
+  ['bws granial rechts','C-R'],
+  ['bws rechts granial','C-R'],
+  ['bws granial links','C-L'],
+  ['bws links granial','C-L'],
+  ['bws granja rechts','C-R'],
+  ['bws rechts granja','C-R'],
+  ['bws granja links','C-L'],
+  ['bws links granja','C-L'],
+  ['bws ranja rechts','C-R'],
+  ['bws rechts ranja','C-R'],
+  ['bws ranja links','C-L'],
+  ['bws links ranja','C-L'],
+  ['bws grania rechts','C-R'],
+  ['bws rechts grania','C-R'],
+  ['bws grania links','C-L'],
+  ['bws links grania','C-L'],
+  ['bws caudal rechts','B-R'],
+  ['bws rechts caudal','B-R'],
+  ['bws caudal links','B-L'],
+  ['bws links caudal','B-L'],
+  ['bws kaudal rechts','B-R'],
+  ['bws rechts kaudal','B-R'],
+  ['bws kaudal links','B-L'],
+  ['bws links kaudal','B-L'],
+  ['bws kauder rechts','B-R'],
+  ['bws rechts kauder','B-R'],
+  ['bws kauder links','B-L'],
+  ['bws links kauder','B-L'],
+  ['bws kaudern rechts','B-R'],
+  ['bws rechts kaudern','B-R'],
+  ['bws kaudern links','B-L'],
+  ['bws links kaudern','B-L'],
+  ['bbs cranial rechts','C-R'],
+  ['bbs rechts cranial','C-R'],
+  ['bbs cranial links','C-L'],
+  ['bbs links cranial','C-L'],
+  ['bbs kranial rechts','C-R'],
+  ['bbs rechts kranial','C-R'],
+  ['bbs kranial links','C-L'],
+  ['bbs links kranial','C-L'],
+  ['bbs granial rechts','C-R'],
+  ['bbs rechts granial','C-R'],
+  ['bbs granial links','C-L'],
+  ['bbs links granial','C-L'],
+  ['bbs granja rechts','C-R'],
+  ['bbs rechts granja','C-R'],
+  ['bbs granja links','C-L'],
+  ['bbs links granja','C-L'],
+  ['bbs ranja rechts','C-R'],
+  ['bbs rechts ranja','C-R'],
+  ['bbs ranja links','C-L'],
+  ['bbs links ranja','C-L'],
+  ['bbs grania rechts','C-R'],
+  ['bbs rechts grania','C-R'],
+  ['bbs grania links','C-L'],
+  ['bbs links grania','C-L'],
+  ['bbs caudal rechts','B-R'],
+  ['bbs rechts caudal','B-R'],
+  ['bbs caudal links','B-L'],
+  ['bbs links caudal','B-L'],
+  ['bbs kaudal rechts','B-R'],
+  ['bbs rechts kaudal','B-R'],
+  ['bbs kaudal links','B-L'],
+  ['bbs links kaudal','B-L'],
+  ['bbs kauder rechts','B-R'],
+  ['bbs rechts kauder','B-R'],
+  ['bbs kauder links','B-L'],
+  ['bbs links kauder','B-L'],
+  ['bbs kaudern rechts','B-R'],
+  ['bbs rechts kaudern','B-R'],
+  ['bbs kaudern links','B-L'],
+  ['bbs links kaudern','B-L'],
+  ['hws cranial rechts','E-R'],
+  ['hws rechts cranial','E-R'],
+  ['hws cranial links','E-L'],
+  ['hws links cranial','E-L'],
+  ['hws kranial rechts','E-R'],
+  ['hws rechts kranial','E-R'],
+  ['hws kranial links','E-L'],
+  ['hws links kranial','E-L'],
+  ['hws granial rechts','E-R'],
+  ['hws rechts granial','E-R'],
+  ['hws granial links','E-L'],
+  ['hws links granial','E-L'],
+  ['hws granja rechts','E-R'],
+  ['hws rechts granja','E-R'],
+  ['hws granja links','E-L'],
+  ['hws links granja','E-L'],
+  ['hws ranja rechts','E-R'],
+  ['hws rechts ranja','E-R'],
+  ['hws ranja links','E-L'],
+  ['hws links ranja','E-L'],
+  ['hws grania rechts','E-R'],
+  ['hws rechts grania','E-R'],
+  ['hws grania links','E-L'],
+  ['hws links grania','E-L'],
+  ['hws caudal rechts','D-R'],
+  ['hws rechts caudal','D-R'],
+  ['hws caudal links','D-L'],
+  ['hws links caudal','D-L'],
+  ['hws kaudal rechts','D-R'],
+  ['hws rechts kaudal','D-R'],
+  ['hws kaudal links','D-L'],
+  ['hws links kaudal','D-L'],
+  ['hws kauder rechts','D-R'],
+  ['hws rechts kauder','D-R'],
+  ['hws kauder links','D-L'],
+  ['hws links kauder','D-L'],
+  ['hws kaudern rechts','D-R'],
+  ['hws rechts kaudern','D-R'],
+  ['hws kaudern links','D-L'],
+  ['hws links kaudern','D-L'],
+  ['sacrum cranial beidseits','S-B'],
+  ['sacrum beidseits cranial','S-B'],
+  ['sacrum kranial beidseits','S-B'],
+  ['sacrum beidseits kranial','S-B'],
+  ['sacrum granial beidseits','S-B'],
+  ['sacrum beidseits granial','S-B'],
+  ['sacrum granja beidseits','S-B'],
+  ['sacrum beidseits granja','S-B'],
+  ['sacrum caudal beidseits','CV-B'],
+  ['sacrum beidseits caudal','CV-B'],
+  ['sacrum kaudal beidseits','CV-B'],
+  ['sacrum beidseits kaudal','CV-B'],
+  ['sacrum kauder beidseits','CV-B'],
+  ['sacrum beidseits kauder','CV-B'],
+  ['sag rum cranial beidseits','S-B'],
+  ['sag rum beidseits cranial','S-B'],
+  ['sag rum kranial beidseits','S-B'],
+  ['sag rum beidseits kranial','S-B'],
+  ['sag rum granial beidseits','S-B'],
+  ['sag rum beidseits granial','S-B'],
+  ['sag rum granja beidseits','S-B'],
+  ['sag rum beidseits granja','S-B'],
+  ['sag rum caudal beidseits','CV-B'],
+  ['sag rum beidseits caudal','CV-B'],
+  ['sag rum kaudal beidseits','CV-B'],
+  ['sag rum beidseits kaudal','CV-B'],
+  ['sag rum kauder beidseits','CV-B'],
+  ['sag rum beidseits kauder','CV-B'],
+  ['lws cranial beidseits','A-B'],
+  ['lws beidseits cranial','A-B'],
+  ['lws kranial beidseits','A-B'],
+  ['lws beidseits kranial','A-B'],
+  ['lws granial beidseits','A-B'],
+  ['lws beidseits granial','A-B'],
+  ['lws granja beidseits','A-B'],
+  ['lws beidseits granja','A-B'],
+  ['lws caudal beidseits','O-B'],
+  ['lws beidseits caudal','O-B'],
+  ['lws kaudal beidseits','O-B'],
+  ['lws beidseits kaudal','O-B'],
+  ['lws kauder beidseits','O-B'],
+  ['lws beidseits kauder','O-B'],
+  ['lbs cranial beidseits','A-B'],
+  ['lbs beidseits cranial','A-B'],
+  ['lbs kranial beidseits','A-B'],
+  ['lbs beidseits kranial','A-B'],
+  ['lbs granial beidseits','A-B'],
+  ['lbs beidseits granial','A-B'],
+  ['lbs granja beidseits','A-B'],
+  ['lbs beidseits granja','A-B'],
+  ['lbs caudal beidseits','O-B'],
+  ['lbs beidseits caudal','O-B'],
+  ['lbs kaudal beidseits','O-B'],
+  ['lbs beidseits kaudal','O-B'],
+  ['lbs kauder beidseits','O-B'],
+  ['lbs beidseits kauder','O-B'],
+  ['bws cranial beidseits','C-B'],
+  ['bws beidseits cranial','C-B'],
+  ['bws kranial beidseits','C-B'],
+  ['bws beidseits kranial','C-B'],
+  ['bws granial beidseits','C-B'],
+  ['bws beidseits granial','C-B'],
+  ['bws granja beidseits','C-B'],
+  ['bws beidseits granja','C-B'],
+  ['bws caudal beidseits','B-B'],
+  ['bws beidseits caudal','B-B'],
+  ['bws kaudal beidseits','B-B'],
+  ['bws beidseits kaudal','B-B'],
+  ['bws kauder beidseits','B-B'],
+  ['bws beidseits kauder','B-B'],
+  ['bbs cranial beidseits','C-B'],
+  ['bbs beidseits cranial','C-B'],
+  ['bbs kranial beidseits','C-B'],
+  ['bbs beidseits kranial','C-B'],
+  ['bbs granial beidseits','C-B'],
+  ['bbs beidseits granial','C-B'],
+  ['bbs granja beidseits','C-B'],
+  ['bbs beidseits granja','C-B'],
+  ['bbs caudal beidseits','B-B'],
+  ['bbs beidseits caudal','B-B'],
+  ['bbs kaudal beidseits','B-B'],
+  ['bbs beidseits kaudal','B-B'],
+  ['bbs kauder beidseits','B-B'],
+  ['bbs beidseits kauder','B-B'],
+  ['hws cranial beidseits','E-B'],
+  ['hws beidseits cranial','E-B'],
+  ['hws kranial beidseits','E-B'],
+  ['hws beidseits kranial','E-B'],
+  ['hws granial beidseits','E-B'],
+  ['hws beidseits granial','E-B'],
+  ['hws granja beidseits','E-B'],
+  ['hws beidseits granja','E-B'],
+  ['hws caudal beidseits','D-B'],
+  ['hws beidseits caudal','D-B'],
+  ['hws kaudal beidseits','D-B'],
+  ['hws beidseits kaudal','D-B'],
+  ['hws kauder beidseits','D-B'],
+  ['hws beidseits kauder','D-B'],
+
+  // HWS = "habe es" (Chrome)
+  ['habe es cranial rechts','E-R'],['habe es cranial links','E-L'],['habe es cranial beidseits','E-B'],
+  ['habe es kranial rechts','E-R'],['habe es kranial links','E-L'],['habe es kranial beidseits','E-B'],
+  ['habe es granial rechts','E-R'],['habe es granial links','E-L'],
+  ['habe es caudal rechts','D-R'],['habe es caudal links','D-L'],['habe es caudal beidseits','D-B'],
+  ['habe es kaudal rechts','D-R'],['habe es kaudal links','D-L'],['habe es kaudal beidseits','D-B'],
+  ['habe es kauder rechts','D-R'],['habe es kauder links','D-L'],
+  ['habe es rechts cranial','E-R'],['habe es links cranial','E-L'],
+  ['habe es rechts kranial','E-R'],['habe es links kranial','E-L'],
+  ['habe es rechts caudal','D-R'],['habe es links caudal','D-L'],
+  ['habe es rechts kaudal','D-R'],['habe es links kaudal','D-L'],
+
+  // Durales Muster Verstümmelungen
+  ['dorales muster rechts','Dural-R'],['dorales muster links','Dural-L'],
+  ['doralist musste rechts','Dural-R'],['doralist musste links','Dural-L'],
+  ['dorales musste rechts','Dural-R'],['dorales musste links','Dural-L'],
+  ['doris muster rechts','Dural-R'],['doris muster links','Dural-L'],
+  ['doris musste rechts','Dural-R'],['doris musste links','Dural-L'],
+  ['dora rechts','Dural-R'],['dora links','Dural-L'],
+  ['doris rechts','Dural-R'],['doris links','Dural-L'],
+  ['doral rechts','Dural-R'],['doral links','Dural-L'],
+
+  // C1 = Condyle Verstümmelungen
+  ['c1 rechts anterior','Condyle-R-A'],['c1 links anterior','Condyle-L-A'],
+  ['c1 rechts anterio','Condyle-R-A'],['c1 links anterio','Condyle-L-A'],
+  ['c1 rechts posterior','Condyle-R-P'],['c1 links posterior','Condyle-L-P'],
+  ['c1 rechts posterio','Condyle-R-P'],['c1 links posterio','Condyle-L-P'],
+  ['c1 rechts ventral','Condyle-R-A'],['c1 links ventral','Condyle-L-A'],
+  ['c1 rechts dorsal','Condyle-R-P'],['c1 links dorsal','Condyle-L-P'],
+  ['c1 rechts vorne','Condyle-R-A'],['c1 links vorne','Condyle-L-A'],
+  ['c1 rechts hinten','Condyle-R-P'],['c1 links hinten','Condyle-L-P'],
+  ['c1 rechts postillon','Condyle-R-P'],['c1 links postillon','Condyle-L-P'],
+  ['c1 rechts antalya','Condyle-R-A'],['c1 links antalya','Condyle-L-A'],
+  ['c1 rechts antonio','Condyle-R-A'],['c1 links antonio','Condyle-L-A'],
+  ['c1 beidseits anterior','Condyle-B-A'],['c1 beidseits posterior','Condyle-B-P'],
+
+  // Schulterblatt caudal = Scapula caudal (Pfeil nach unten am Angulus)
+  ['schulterblatt rechts caudal','Scap-ScapCaudal-R'],['schulterblatt links caudal','Scap-ScapCaudal-L'],
+  ['schulterblatt rechts kaudal','Scap-ScapCaudal-R'],['schulterblatt links kaudal','Scap-ScapCaudal-L'],
+  ['schulterblatt caudal rechts','Scap-ScapCaudal-R'],['schulterblatt caudal links','Scap-ScapCaudal-L'],
+  ['schulterblatt kaudal rechts','Scap-ScapCaudal-R'],['schulterblatt kaudal links','Scap-ScapCaudal-L'],
+
+  // Scapula caudal
+  ['scapula rechts kaudal','Scap-ScapCaudal-R'],['scapula links kaudal','Scap-ScapCaudal-L'],
+  ['scapula kaudal rechts','Scap-ScapCaudal-R'],['scapula kaudal links','Scap-ScapCaudal-L'],
+  ['scapula caudal rechts','Scap-ScapCaudal-R'],['scapula caudal links','Scap-ScapCaudal-L'],
+
+  // Scapula/Schulterblatt caudal - alle Reihenfolgen und Verstümmelungen
+  ['scapula rechts caudal','Scap-ScapCaudal-R'],
+  ['scapula caudal rechts','Scap-ScapCaudal-R'],
+  ['scapula links caudal','Scap-ScapCaudal-L'],
+  ['scapula caudal links','Scap-ScapCaudal-L'],
+  ['scapula rechts kaudal','Scap-ScapCaudal-R'],
+  ['scapula kaudal rechts','Scap-ScapCaudal-R'],
+  ['scapula links kaudal','Scap-ScapCaudal-L'],
+  ['scapula kaudal links','Scap-ScapCaudal-L'],
+  ['scapula rechts kauder','Scap-ScapCaudal-R'],
+  ['scapula kauder rechts','Scap-ScapCaudal-R'],
+  ['scapula links kauder','Scap-ScapCaudal-L'],
+  ['scapula kauder links','Scap-ScapCaudal-L'],
+  ['scapula rechts kaudern','Scap-ScapCaudal-R'],
+  ['scapula kaudern rechts','Scap-ScapCaudal-R'],
+  ['scapula links kaudern','Scap-ScapCaudal-L'],
+  ['scapula kaudern links','Scap-ScapCaudal-L'],
+  ['scapula rechts gauda','Scap-ScapCaudal-R'],
+  ['scapula gauda rechts','Scap-ScapCaudal-R'],
+  ['scapula links gauda','Scap-ScapCaudal-L'],
+  ['scapula gauda links','Scap-ScapCaudal-L'],
+  ['schulterblatt rechts caudal','Scap-ScapCaudal-R'],
+  ['schulterblatt caudal rechts','Scap-ScapCaudal-R'],
+  ['schulterblatt links caudal','Scap-ScapCaudal-L'],
+  ['schulterblatt caudal links','Scap-ScapCaudal-L'],
+  ['schulterblatt rechts kaudal','Scap-ScapCaudal-R'],
+  ['schulterblatt kaudal rechts','Scap-ScapCaudal-R'],
+  ['schulterblatt links kaudal','Scap-ScapCaudal-L'],
+  ['schulterblatt kaudal links','Scap-ScapCaudal-L'],
+  ['schulterblatt rechts kauder','Scap-ScapCaudal-R'],
+  ['schulterblatt kauder rechts','Scap-ScapCaudal-R'],
+  ['schulterblatt links kauder','Scap-ScapCaudal-L'],
+  ['schulterblatt kauder links','Scap-ScapCaudal-L'],
+  ['schulterblatt rechts kaudern','Scap-ScapCaudal-R'],
+  ['schulterblatt kaudern rechts','Scap-ScapCaudal-R'],
+  ['schulterblatt links kaudern','Scap-ScapCaudal-L'],
+  ['schulterblatt kaudern links','Scap-ScapCaudal-L'],
+  ['schulterblatt rechts gauda','Scap-ScapCaudal-R'],
+  ['schulterblatt gauda rechts','Scap-ScapCaudal-R'],
+  ['schulterblatt links gauda','Scap-ScapCaudal-L'],
+  ['schulterblatt gauda links','Scap-ScapCaudal-L'],
+  ['skapula rechts caudal','Scap-ScapCaudal-R'],
+  ['skapula caudal rechts','Scap-ScapCaudal-R'],
+  ['skapula links caudal','Scap-ScapCaudal-L'],
+  ['skapula caudal links','Scap-ScapCaudal-L'],
+  ['skapula rechts kaudal','Scap-ScapCaudal-R'],
+  ['skapula kaudal rechts','Scap-ScapCaudal-R'],
+  ['skapula links kaudal','Scap-ScapCaudal-L'],
+  ['skapula kaudal links','Scap-ScapCaudal-L'],
+  ['skapula rechts kauder','Scap-ScapCaudal-R'],
+  ['skapula kauder rechts','Scap-ScapCaudal-R'],
+  ['skapula links kauder','Scap-ScapCaudal-L'],
+  ['skapula kauder links','Scap-ScapCaudal-L'],
+  ['skapula rechts kaudern','Scap-ScapCaudal-R'],
+  ['skapula kaudern rechts','Scap-ScapCaudal-R'],
+  ['skapula links kaudern','Scap-ScapCaudal-L'],
+  ['skapula kaudern links','Scap-ScapCaudal-L'],
+  ['skapula rechts gauda','Scap-ScapCaudal-R'],
+  ['skapula gauda rechts','Scap-ScapCaudal-R'],
+  ['skapula links gauda','Scap-ScapCaudal-L'],
+  ['skapula gauda links','Scap-ScapCaudal-L'],
+
+  // Scapula/Schulterblatt nummeriert von caudal nach cranial
+  // 1 = Leber/Margo medialis (Angulus inferior)
+  ['scapula 1 rechts','Scap-Leber-R'],['scapula 1 links','Scap-Leber-L'],
+  ['schulterblatt 1 rechts','Scap-Leber-R'],['schulterblatt 1 links','Scap-Leber-L'],
+  ['scapula eins rechts','Scap-Leber-R'],['scapula eins links','Scap-Leber-L'],
+  ['schulterblatt eins rechts','Scap-Leber-R'],['schulterblatt eins links','Scap-Leber-L'],
+  ['leberlappen rechts','Scap-Leber-R'],['leberlappen links','Scap-Leber-L'],
+  ['rechter leberlappen','Scap-Leber-R'],['linker leberlappen','Scap-Leber-L'],
+
+  // 2 = Ösophagus (mittig)
+  ['scapula 2 rechts','Scap-Oesoph-R'],['scapula 2 links','Scap-Oesoph-L'],
+  ['schulterblatt 2 rechts','Scap-Oesoph-R'],['schulterblatt 2 links','Scap-Oesoph-L'],
+  ['scapula zwei rechts','Scap-Oesoph-R'],['scapula zwei links','Scap-Oesoph-L'],
+  ['schulterblatt zwei rechts','Scap-Oesoph-R'],['schulterblatt zwei links','Scap-Oesoph-L'],
+
+  // 3 = Trachea (auf Höhe Spina)
+  ['scapula 3 rechts','Scap-Trachea-R'],['scapula 3 links','Scap-Trachea-L'],
+  ['schulterblatt 3 rechts','Scap-Trachea-R'],['schulterblatt 3 links','Scap-Trachea-L'],
+  ['scapula drei rechts','Scap-Trachea-R'],['scapula drei links','Scap-Trachea-L'],
+  ['schulterblatt drei rechts','Scap-Trachea-R'],['schulterblatt drei links','Scap-Trachea-L'],
+
+  // 4 = Kehle/Rachen (oberer Winkel)
+  ['scapula 4 rechts','Scap-Rachen-R'],['scapula 4 links','Scap-Rachen-L'],
+  ['schulterblatt 4 rechts','Scap-Rachen-R'],['schulterblatt 4 links','Scap-Rachen-L'],
+  ['scapula vier rechts','Scap-Rachen-R'],['scapula vier links','Scap-Rachen-L'],
+  ['schulterblatt vier rechts','Scap-Rachen-R'],['schulterblatt vier links','Scap-Rachen-L'],
+
+  // SG1/SG2/SG3 - mehr Varianten
+  ['sg1 schulter rechts','RL-SG1-R'],['sg1 schulter links','RL-SG1-L'],
+  ['sg2 schulter rechts','RL-SG2-R'],['sg2 schulter links','RL-SG2-L'],
+  ['sg3 schulter rechts','RL-SG3-R'],['sg3 schulter links','RL-SG3-L'],
+  ['s g 1 rechts','RL-SG1-R'],['s g 1 links','RL-SG1-L'],
+  ['s g 2 rechts','RL-SG2-R'],['s g 2 links','RL-SG2-L'],
+  ['s g 3 rechts','RL-SG3-R'],['s g 3 links','RL-SG3-L'],
+  ['hyperabduktion 1 rechts','RL-SG1-R'],['hyperabduktion 1 links','RL-SG1-L'],
+  ['hyperabduktion 2 rechts','RL-SG2-R'],['hyperabduktion 2 links','RL-SG2-L'],
+  ['hyperabduktion 3 rechts','RL-SG3-R'],['hyperabduktion 3 links','RL-SG3-L'],
+  ['hyperabduktion eins rechts','RL-SG1-R'],['hyperabduktion eins links','RL-SG1-L'],
+  ['hyperabduktion zwei rechts','RL-SG2-R'],['hyperabduktion zwei links','RL-SG2-L'],
+  ['hyperabduktion drei rechts','RL-SG3-R'],['hyperabduktion drei links','RL-SG3-L'],
+  ['hyperabduktion schulter rechts cranial','RL-SG1-R'],['hyperabduktion schulter links cranial','RL-SG1-L'],
+  ['hyperabduktion schulter rechts medial','RL-SG2-R'],['hyperabduktion schulter links medial','RL-SG2-L'],
+  ['hyperabduktion schulter rechts caudal','RL-SG3-R'],['hyperabduktion schulter links caudal','RL-SG3-L'],
+  ['hyperabduktion schulter rechts kaudal','RL-SG3-R'],['hyperabduktion schulter links kaudal','RL-SG3-L'],
+
+  // Hohe Adduktion - mehr Varianten
+  ['hochadduktion rechts','RL-HochAdd-R'],['hochadduktion links','RL-HochAdd-L'],
+  ['hoch adduktion rechts','RL-HochAdd-R'],['hoch adduktion links','RL-HochAdd-L'],
+  ['hohe adduktion schulter rechte','RL-HochAdd-R'],['hohe adduktion schulter linke','RL-HochAdd-L'],
+  ['schulter rechts hohe adduktion','RL-HochAdd-R'],['schulter links hohe adduktion','RL-HochAdd-L'],
+  ['rechte schulter hochadduktion','RL-HochAdd-R'],['linke schulter hochadduktion','RL-HochAdd-L'],
+  ['rechte schulter in hoher adduktion','RL-HochAdd-R'],['linke schulter in hoher adduktion','RL-HochAdd-L'],
+
+  // IR/AR Hüfte lang - mehr Varianten
+  ['innenrotation hüfte lang rechts','HuefIRL-R'],['innenrotation hüfte lang links','HuefIRL-L'],
+  ['innenrotation lang hüfte rechts','HuefIRL-R'],['innenrotation lang hüfte links','HuefIRL-L'],
+  ['hüfte innenrotation lang rechts','HuefIRL-R'],['hüfte innenrotation lang links','HuefIRL-L'],
+  ['rechte hüfte innenrotation lang','HuefIRL-R'],['linke hüfte innenrotation lang','HuefIRL-L'],
+  ['ir lang hüfte rechts','HuefIRL-R'],['ir lang hüfte links','HuefIRL-L'],
+  ['außenrotation hüfte lang rechts','HuefARL-R'],['außenrotation hüfte lang links','HuefARL-L'],
+  ['außenrotation lang hüfte rechts','HuefARL-R'],['außenrotation lang hüfte links','HuefARL-L'],
+  ['hüfte außenrotation lang rechts','HuefARL-R'],['hüfte außenrotation lang links','HuefARL-L'],
+  ['rechte hüfte außenrotation lang','HuefARL-R'],['linke hüfte außenrotation lang','HuefARL-L'],
+  ['ar lang hüfte rechts','HuefARL-R'],['ar lang hüfte links','HuefARL-L'],
+
+  // Knie 1/2/3 IR/AR Varianten
+  ['knie 1 innenrotation rechts','Knie1-IR-R'],['knie 1 innenrotation links','Knie1-IR-L'],
+  ['knie 1 außenrotation rechts','Knie1-AR-R'],['knie 1 außenrotation links','Knie1-AR-L'],
+  ['knie 2 innenrotation rechts','Knie2-IR-R'],['knie 2 innenrotation links','Knie2-IR-L'],
+  ['knie 2 außenrotation rechts','Knie2-AR-R'],['knie 2 außenrotation links','Knie2-AR-L'],
+  ['knie 3 innenrotation rechts','Knie3-IR-R'],['knie 3 innenrotation links','Knie3-IR-L'],
+  ['knie 3 außenrotation rechts','Knie3-AR-R'],['knie 3 außenrotation links','Knie3-AR-L'],
+  ['knie eins innenrotation rechts','Knie1-IR-R'],['knie eins innenrotation links','Knie1-IR-L'],
+  ['knie eins außenrotation rechts','Knie1-AR-R'],['knie eins außenrotation links','Knie1-AR-L'],
+  ['knie zwei innenrotation rechts','Knie2-IR-R'],['knie zwei innenrotation links','Knie2-IR-L'],
+  ['knie zwei außenrotation rechts','Knie2-AR-R'],['knie zwei außenrotation links','Knie2-AR-L'],
+  ['knie drei innenrotation rechts','Knie3-IR-R'],['knie drei innenrotation links','Knie3-IR-L'],
+  ['knie drei außenrotation rechts','Knie3-AR-R'],['knie drei außenrotation links','Knie3-AR-L'],
+  ['ir knie 1 rechts','Knie1-IR-R'],['ir knie 1 links','Knie1-IR-L'],
+  ['ar knie 1 rechts','Knie1-AR-R'],['ar knie 1 links','Knie1-AR-L'],
+  ['ir knie 2 rechts','Knie2-IR-R'],['ir knie 2 links','Knie2-IR-L'],
+  ['ar knie 2 rechts','Knie2-AR-R'],['ar knie 2 links','Knie2-AR-L'],
+  ['ir knie 3 rechts','Knie3-IR-R'],['ir knie 3 links','Knie3-IR-L'],
+  ['ar knie 3 rechts','Knie3-AR-R'],['ar knie 3 links','Knie3-AR-L'],
+
+  // Ellenbogen Extension/Flexion
+  ['ellenbogen extension rechts','CubExt-R'],['ellenbogen extension links','CubExt-L'],
+  ['ellenbogen extension rechts eingeschränkt','CubExt-R'],['ellenbogen extension links eingeschränkt','CubExt-L'],
+  ['ellbogen extension rechts','CubExt-R'],['ellbogen extension links','CubExt-L'],
+  ['ellbogen extension rechts eingeschränkt','CubExt-R'],['ellbogen extension links eingeschränkt','CubExt-L'],
+  ['rechter ellenbogen extension','CubExt-R'],['linker ellenbogen extension','CubExt-L'],
+  ['rechter ellbogen extension','CubExt-R'],['linker ellbogen extension','CubExt-L'],
+  ['extension ellenbogen rechts','CubExt-R'],['extension ellenbogen links','CubExt-L'],
+  ['extension ellbogen rechts','CubExt-R'],['extension ellbogen links','CubExt-L'],
+  ['cubiti extension rechts','CubExt-R'],['cubiti extension links','CubExt-L'],
+  ['ellenbogen flexion rechts','CubFlex-R'],['ellenbogen flexion links','CubFlex-L'],
+  ['ellenbogen flexion rechts eingeschränkt','CubFlex-R'],['ellenbogen flexion links eingeschränkt','CubFlex-L'],
+  ['ellbogen flexion rechts','CubFlex-R'],['ellbogen flexion links','CubFlex-L'],
+  ['ellbogen flexion rechts eingeschränkt','CubFlex-R'],['ellbogen flexion links eingeschränkt','CubFlex-L'],
+  ['rechter ellenbogen flexion','CubFlex-R'],['linker ellenbogen flexion','CubFlex-L'],
+  ['rechter ellbogen flexion','CubFlex-R'],['linker ellbogen flexion','CubFlex-L'],
+  ['flexion ellenbogen rechts','CubFlex-R'],['flexion ellenbogen links','CubFlex-L'],
+  ['flexion ellbogen rechts','CubFlex-R'],['flexion ellbogen links','CubFlex-L'],
+  ['cubiti flexion rechts','CubFlex-R'],['cubiti flexion links','CubFlex-L'],
+
+  // Chorda Cranial/Caudal Buchstaben - alle Reihenfolgen
+  ['chorda hs cranial rechts','ChordaC-HS-R'],['chorda hs cranial links','ChordaC-HS-L'],
+  ['chorda s cranial rechts','ChordaC-S-R'],['chorda s cranial links','ChordaC-S-L'],
+  ['chorda l cranial rechts','ChordaC-L-R'],['chorda l cranial links','ChordaC-L-L'],
+  ['chorda b cranial rechts','ChordaC-B-R'],['chorda b cranial links','ChordaC-B-L'],
+  ['chorda h cranial rechts','ChordaC-H-R'],['chorda h cranial links','ChordaC-H-L'],
+  ['chorda rm cranial rechts','ChordaC-RM-R'],['chorda rm cranial links','ChordaC-RM-L'],
+  ['chorda hs caudal rechts','ChordaCau-HS-R'],['chorda hs caudal links','ChordaCau-HS-L'],
+  ['chorda s caudal rechts','ChordaCau-S-R'],['chorda s caudal links','ChordaCau-S-L'],
+  ['chorda l caudal rechts','ChordaCau-L-R'],['chorda l caudal links','ChordaCau-L-L'],
+  ['chorda b caudal rechts','ChordaCau-B-R'],['chorda b caudal links','ChordaCau-B-L'],
+  ['chorda h caudal rechts','ChordaCau-H-R'],['chorda h caudal links','ChordaCau-H-L'],
+  ['chorda rm caudal rechts','ChordaCau-RM-R'],['chorda rm caudal links','ChordaCau-RM-L'],
+  // Mit Vollnamen
+  ['chorda hiatus rechts cranial','ChordaC-HS-R'],['chorda hiatus links cranial','ChordaC-HS-L'],
+  ['chorda hiatus rechts caudal','ChordaCau-HS-R'],['chorda hiatus links caudal','ChordaCau-HS-L'],
+  ['chorda sacrum rechts cranial','ChordaC-S-R'],['chorda sacrum links cranial','ChordaC-S-L'],
+  ['chorda sacrum rechts caudal','ChordaCau-S-R'],['chorda sacrum links caudal','ChordaCau-S-L'],
+  ['chorda lws rechts cranial','ChordaC-L-R'],['chorda lws links cranial','ChordaC-L-L'],
+  ['chorda lws rechts caudal','ChordaCau-L-R'],['chorda lws links caudal','ChordaCau-L-L'],
+  ['chorda bws rechts cranial','ChordaC-B-R'],['chorda bws links cranial','ChordaC-B-L'],
+  ['chorda bws rechts caudal','ChordaCau-B-R'],['chorda bws links caudal','ChordaCau-B-L'],
+  ['chorda hws rechts cranial','ChordaC-H-R'],['chorda hws links cranial','ChordaC-H-L'],
+  ['chorda hws rechts caudal','ChordaCau-H-R'],['chorda hws links caudal','ChordaCau-H-L'],
+  ['chorda mesencephalon rechts cranial','ChordaC-RM-R'],['chorda mesencephalon links cranial','ChordaC-RM-L'],
+  ['chorda mesencephalon rechts caudal','ChordaCau-RM-R'],['chorda mesencephalon links caudal','ChordaCau-RM-L'],
+
+  // Sternum - mehr Varianten
+  ['sternum rechts hochstand','Sternum-R'],['sternum links hochstand','Sternum-L'],
+  ['hochstand sternum rechts','Sternum-R'],['hochstand sternum links','Sternum-L'],
+  ['sternum rechts','Sternum-R'],['sternum links','Sternum-L'],
+  ['sternum rechts cranial','Sternum-R'],['sternum links cranial','Sternum-L'],
+  ['sternum cranial rechts','Sternum-R'],['sternum cranial links','Sternum-L'],
+  ['sternum kranial rechts','Sternum-R'],['sternum kranial links','Sternum-L'],
+  ['sternum rechts kranial','Sternum-R'],['sternum links kranial','Sternum-L'],
+  ['rechtes sternum hochstand','Sternum-R'],['linkes sternum hochstand','Sternum-L'],
+  ['rechtes sternum cranial','Sternum-R'],['linkes sternum cranial','Sternum-L'],
+
+  // Manubrium - mehr Varianten
+  ['manubrium rechts','Manubrium-R'],['manubrium links','Manubrium-L'],
+  ['manubrium hochstand rechts','Manubrium-R'],['manubrium hochstand links','Manubrium-L'],
+  ['hochstand manubrium rechts','Manubrium-R'],['hochstand manubrium links','Manubrium-L'],
+  ['manubrium rechts cranial','Manubrium-R'],['manubrium links cranial','Manubrium-L'],
+  ['manubrium cranial rechts','Manubrium-R'],['manubrium cranial links','Manubrium-L'],
+  ['manubrium kranial rechts','Manubrium-R'],['manubrium kranial links','Manubrium-L'],
+  ['manubrium rechts kranial','Manubrium-R'],['manubrium links kranial','Manubrium-L'],
+  ['rechtes manubrium','Manubrium-R'],['linkes manubrium','Manubrium-L'],
+  ['rechtes manubrium hochstand','Manubrium-R'],['linkes manubrium hochstand','Manubrium-L'],
+
+  // Korpus Sternum - mehr Varianten
+  ['korpus rechts','Korpus-R'],['korpus links','Korpus-L'],
+  ['korpus sternum rechts','Korpus-R'],['korpus sternum links','Korpus-L'],
+  ['sternum korpus rechts','Korpus-R'],['sternum korpus links','Korpus-L'],
+  ['korpus rechts tiefstand','Korpus-R'],['korpus links tiefstand','Korpus-L'],
+  ['tiefstand korpus rechts','Korpus-R'],['tiefstand korpus links','Korpus-L'],
+  ['korpus rechts caudal','Korpus-R'],['korpus links caudal','Korpus-L'],
+  ['korpus caudal rechts','Korpus-R'],['korpus caudal links','Korpus-L'],
+  ['korpus kaudal rechts','Korpus-R'],['korpus kaudal links','Korpus-L'],
+  ['korpus rechts kaudal','Korpus-R'],['korpus links kaudal','Korpus-L'],
+  ['rechter korpus','Korpus-R'],['linker korpus','Korpus-L'],
+  ['rechter korpus tiefstand','Korpus-R'],['linker korpus tiefstand','Korpus-L'],
+  ['rechter korpus caudal','Korpus-R'],['linker korpus caudal','Korpus-L'],
+
+  // Sternum-Verstümmelungen die Chrome machen könnte
+  ['turnen rechts hochstand','Sternum-R'],['turnen links hochstand','Sternum-L'],
+  ['sternung rechts','Sternum-R'],['sternung links','Sternum-L'],
+
+  // Außenrotation/Innenrotation Knie eins/zwei/drei vorangestellt
+  ['außenrotation knie eins rechts','Knie1-AR-R'],['außenrotation knie eins links','Knie1-AR-L'],
+  ['außenrotation knie zwei rechts','Knie2-AR-R'],['außenrotation knie zwei links','Knie2-AR-L'],
+  ['außenrotation knie drei rechts','Knie3-AR-R'],['außenrotation knie drei links','Knie3-AR-L'],
+  ['innenrotation knie eins rechts','Knie1-IR-R'],['innenrotation knie eins links','Knie1-IR-L'],
+  ['innenrotation knie zwei rechts','Knie2-IR-R'],['innenrotation knie zwei links','Knie2-IR-L'],
+  ['innenrotation knie drei rechts','Knie3-IR-R'],['innenrotation knie drei links','Knie3-IR-L'],
+
+  // Knie Rotation - Reihenfolge: Rotation Seite Knie Nr
+  ['innenrotation links knie 1','Knie1-IR-L'],['innenrotation rechts knie 1','Knie1-IR-R'],
+  ['innenrotation links knie 2','Knie2-IR-L'],['innenrotation rechts knie 2','Knie2-IR-R'],
+  ['innenrotation links knie 3','Knie3-IR-L'],['innenrotation rechts knie 3','Knie3-IR-R'],
+  ['innenrotation links knie eins','Knie1-IR-L'],['innenrotation rechts knie eins','Knie1-IR-R'],
+  ['innenrotation links knie zwei','Knie2-IR-L'],['innenrotation rechts knie zwei','Knie2-IR-R'],
+  ['innenrotation links knie drei','Knie3-IR-L'],['innenrotation rechts knie drei','Knie3-IR-R'],
+  ['außenrotation links knie 1','Knie1-AR-L'],['außenrotation rechts knie 1','Knie1-AR-R'],
+  ['außenrotation links knie 2','Knie2-AR-L'],['außenrotation rechts knie 2','Knie2-AR-R'],
+  ['außenrotation links knie 3','Knie3-AR-L'],['außenrotation rechts knie 3','Knie3-AR-R'],
+  ['außenrotation links knie eins','Knie1-AR-L'],['außenrotation rechts knie eins','Knie1-AR-R'],
+  ['außenrotation links knie zwei','Knie2-AR-L'],['außenrotation rechts knie zwei','Knie2-AR-R'],
+  ['außenrotation links knie drei','Knie3-AR-L'],['außenrotation rechts knie drei','Knie3-AR-R'],
+
+  // Knie Rotation - Reihenfolge: Rotation rechtes/linkes Knie Nr
+  ['außenrotation rechtes knie eins','Knie1-AR-R'],['außenrotation linkes knie eins','Knie1-AR-L'],
+  ['außenrotation rechtes knie zwei','Knie2-AR-R'],['außenrotation linkes knie zwei','Knie2-AR-L'],
+  ['außenrotation rechtes knie drei','Knie3-AR-R'],['außenrotation linkes knie drei','Knie3-AR-L'],
+  ['außenrotation rechtes knie 1','Knie1-AR-R'],['außenrotation linkes knie 1','Knie1-AR-L'],
+  ['außenrotation rechtes knie 2','Knie2-AR-R'],['außenrotation linkes knie 2','Knie2-AR-L'],
+  ['außenrotation rechtes knie 3','Knie3-AR-R'],['außenrotation linkes knie 3','Knie3-AR-L'],
+  ['innenrotation rechtes knie eins','Knie1-IR-R'],['innenrotation linkes knie eins','Knie1-IR-L'],
+  ['innenrotation rechtes knie zwei','Knie2-IR-R'],['innenrotation linkes knie zwei','Knie2-IR-L'],
+  ['innenrotation rechtes knie drei','Knie3-IR-R'],['innenrotation linkes knie drei','Knie3-IR-L'],
+  ['innenrotation rechtes knie 1','Knie1-IR-R'],['innenrotation linkes knie 1','Knie1-IR-L'],
+  ['innenrotation rechtes knie 2','Knie2-IR-R'],['innenrotation linkes knie 2','Knie2-IR-L'],
+  ['innenrotation rechtes knie 3','Knie3-IR-R'],['innenrotation linkes knie 3','Knie3-IR-L'],
+
+  // Knie - Reihenfolge: Knie Nr Seite Rotation
+  ['knie 1 rechts innenrotation','Knie1-IR-R'],['knie 1 links innenrotation','Knie1-IR-L'],
+  ['knie 2 rechts innenrotation','Knie2-IR-R'],['knie 2 links innenrotation','Knie2-IR-L'],
+  ['knie 3 rechts innenrotation','Knie3-IR-R'],['knie 3 links innenrotation','Knie3-IR-L'],
+  ['knie eins rechts innenrotation','Knie1-IR-R'],['knie eins links innenrotation','Knie1-IR-L'],
+  ['knie zwei rechts innenrotation','Knie2-IR-R'],['knie zwei links innenrotation','Knie2-IR-L'],
+  ['knie drei rechts innenrotation','Knie3-IR-R'],['knie drei links innenrotation','Knie3-IR-L'],
+  ['knie 1 rechts außenrotation','Knie1-AR-R'],['knie 1 links außenrotation','Knie1-AR-L'],
+  ['knie 2 rechts außenrotation','Knie2-AR-R'],['knie 2 links außenrotation','Knie2-AR-L'],
+  ['knie 3 rechts außenrotation','Knie3-AR-R'],['knie 3 links außenrotation','Knie3-AR-L'],
+  ['knie eins rechts außenrotation','Knie1-AR-R'],['knie eins links außenrotation','Knie1-AR-L'],
+  ['knie zwei rechts außenrotation','Knie2-AR-R'],['knie zwei links außenrotation','Knie2-AR-L'],
+  ['knie drei rechts außenrotation','Knie3-AR-R'],['knie drei links außenrotation','Knie3-AR-L'],
+
+  // Knie Flexion/Extension - Seite zuerst Form
+  ['linkes knie flexionseinschränkung','KnieFlex-L'],['rechtes knie flexionseinschränkung','KnieFlex-R'],
+  ['linkes knie extensionseinschränkung','KnieExt-L'],['rechtes knie extensionseinschränkung','KnieExt-R'],
+  ['linkes knie flexion','KnieFlex-L'],['rechtes knie flexion','KnieFlex-R'],
+  ['linkes knie extension','KnieExt-L'],['rechtes knie extension','KnieExt-R'],
+];
+
+
+function checkDuralAutoColor(){
+  // Prüft ob alle Kurvaturen einer Seite (E,D,C,B,A,O,S,CV) eingefärbt sind
+  const sides=['L','R'];
+  const kurvIds=['E','D','C','B','A','O','S','CV'];
+  for(const side of sides){
+    const allColored=kurvIds.every(k=>sm[`${k}-${side}`]!=='neutral');
+    if(allColored && sm[`Dural-${side}`]==='neutral'){
+      // Färbe Durales Muster automatisch ein
+      reg[`Dural-${side}`].cycle();
+    }
+  }
+}
+
+function handleSpeech(transcript){
+  const t=transcript.toLowerCase().trim();
+  document.getElementById('speechLog').textContent='Gehört: „'+transcript+'"';
+
+  // Korrektur
+  if(t.startsWith('korrektur ')){
+    const rest=t.replace('korrektur ','');
+    const sorted=[...speechMap].sort((a,b)=>b[0].length-a[0].length);
+    for(const [phrase,id] of sorted){
+      if(id.startsWith('__')) continue;
+      if(rest.includes(phrase)&&reg[id]&&sm[id]!=='neutral'){
+        sm[id]='restricted';reg[id].cycle();
+        // SLR Text zurück auf "SLR"
+        if(id.startsWith('SLR-')){
+          const slrEl=svg.querySelector(`[data-slr="${id.slice(4)}"]`);
+          if(slrEl) slrEl.textContent='SLR';
+        }
+        playTon(440,0.15);setTimeout(()=>playTon(340,0.2),160);
+        showSb(reg[id].label+' — korrigiert','neutral');return;
+      }
+    }
+    return;
+  }
+
+  // Tab-Wechsel
+  const tabDirekt={'stand':'Stand','sitz':'Sitz','rückenlage':'Rück','rücken':'Rück','rippe':'Rippe','rippen':'Rippe'};
+  if(tabDirekt[t]){
+    document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active',btn.textContent===tabDirekt[t]));
+    document.getElementById('sb').textContent='Wechsel zu: '+tabDirekt[t];
+    tonErfolgreich();return;
+  }
+
+    // SLR mit Wert z.B. "SLR 70 links", auch "straight leg raise/race rechts 70"
+  const slrMatch=t.match(/(?:slr|straight\s+leg\s+(?:raise|race))\s+(?:(\d+)\s*(?:°|grad)?\s*(links|rechts)|(links|rechts)\s+(\d+)\s*(?:°|grad)?)/);
+  if(slrMatch){
+    const wert=slrMatch[1]||slrMatch[4], seiteStr=slrMatch[2]||slrMatch[3];
+    const seite=seiteStr==='links'?'L':'R';
+    sm[`SLR-${seite}`]='restricted';
+    const slrEl=svg.querySelector(`[data-slr="${seite}"]`);
+    if(slrEl){slrEl.textContent='SLR '+wert+'°';slrEl.setAttribute('fill','#cc0000');}
+    showSb('SLR '+wert+'° '+seite,'restricted');
+    tonErfolgreich();
+    return;
+  }
+
+    const sorted=[...speechMap].sort((a,b)=>b[0].length-a[0].length);
+  for(const [phrase,id] of sorted){
+    if(t.includes(phrase)){
+      if(id.startsWith('__tab_')){
+        const tab=id.replace('__tab_','');
+        document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active',btn.textContent===tab));
+        document.getElementById('sb').textContent='Wechsel zu: '+tab;
+        tonErfolgreich();return;
+      }
+      if(reg[id]){
+        if(sm[id]!=='neutral'){
+          playTon(660,0.1);
+          document.getElementById('speechLog').textContent='Bereits gesetzt: '+reg[id].label;
+          return;
+        }
+        reg[id].cycle();checkDuralAutoColor();tonErfolgreich();return;
+      }
+    }
+  }
+  document.getElementById('speechLog').textContent='Nicht erkannt: „'+transcript+'"';
+  playTon(150,0.6,'sawtooth');
+}
+
+// Mikrofon
+let micRunning=false;
+function setMicUI(state,text){
+  document.getElementById('micDot').classList.toggle('active',state==='active');
+  document.getElementById('micStatus').classList.toggle('listening',state==='active');
+  document.getElementById('micText').textContent=text;
+}
+function startRecognition(){
+  if(micRunning)return;
+  if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window)){setMicUI('stopped','Spracherkennung nicht verfügbar');return;}
+  micRunning=true;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const recognition=new SR();
+  recognition.lang='de-DE';recognition.continuous=true;recognition.interimResults=false;
+  recognition.onstart=()=>{
+    setMicUI('active','Mikrofon aktiv — hört zu…');
+    if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+    if(audioCtx&&audioCtx.state==='suspended') audioCtx.resume();
+    document.getElementById('audioBtn').textContent='🔔 Ton aktiv';
+    document.getElementById('audioBtn').style.background='#f0fff0';
+    document.getElementById('audioBtn').style.color='#336600';
+  };
+  recognition.onresult=(e)=>handleSpeech(e.results[e.results.length-1][0].transcript);
+  recognition.onerror=(e)=>{micRunning=false;if(e.error==='not-allowed'){setMicUI('stopped','Mikrofon verweigert');return;}setTimeout(startRecognition,5000);};
+  recognition.onend=()=>{micRunning=false;setTimeout(startRecognition,3000);setMicUI('stopped','Mikrofon kurz unterbrochen…');};
+  try{recognition.start();}catch(e){micRunning=false;}
+}
+window.addEventListener('load',()=>setTimeout(startRecognition,1500));
+
+function resetAll(){
+  Object.keys(sm).forEach(k=>sm[k]='neutral');
+  svg.querySelectorAll('line,path').forEach(e=>{
+    if(e.getAttribute('stroke')==='transparent')return;
+    e.setAttribute('stroke',e.getAttribute('stroke-dasharray')?COL_DASH:COL);
+  });
+  svg.querySelectorAll('polygon').forEach(p=>{
+    if(p.getAttribute('fill')==='none')p.setAttribute('stroke',COL);
+    else if(p.getAttribute('fill')!=='transparent')p.setAttribute('fill',COL);
+  });
+  svg.querySelectorAll('text').forEach(t=>{if(t.getAttribute('pointer-events')!=='none')t.setAttribute('fill',COL);});
+  document.getElementById('sb').textContent='Alle zurückgesetzt';
+}
+
+function exportBefund(){
+  const aktiv=Object.entries(sm).filter(([k,v])=>v!=='neutral').map(([k,v])=>{const r=reg[k];return r?`${r.label}: ${v}`:null;}).filter(Boolean);
+  const text=aktiv.length?'Befund Rückenlage:\n'+aktiv.join('\n'):'Keine Befunde';
+  const blob=new Blob([text],{type:'text/plain'});const a=document.createElement('a');
+  a.download='Befund_RL_'+new Date().toISOString().slice(0,10)+'.txt';a.href=URL.createObjectURL(blob);a.click();
+}
+</script>
+</body>
+</html>
